@@ -1,0 +1,892 @@
+module swfbiganal.swfreader;
+
+import core.stdc.stdarg;
+import core.stdc.stdio;
+import core.stdc.string;
+import etc.c.zlib;
+import swfbiganal.appenders.junkappender;
+import swfbiganal.appenders.limitappender;
+import swfbiganal.appenders.swfdataappender;
+import swfbiganal.cdef.lzma;
+import swfbiganal.swfbitreader;
+import swfbiganal.swftypes.swfheader;
+import swfbiganal.swftypes.swfmovieheader;
+import swfbiganal.swftypes.swftag;
+import swfbiganal.swftypes.swflzmaextradata;
+import swfbiganal.swftypes.swfrect;
+import swfbiganal.util.compiler;
+import swfbiganal.util.datacrc;
+import swfbiganal.util.decompressor;
+import swfbiganal.util.explainbytes;
+
+// 32bit
+private size_t bitsToBytes(ulong bits)
+{
+	pragma(inline, true);
+	return cast(size_t)(bits >> 3);
+}
+
+struct SwfReader
+{
+	public enum State
+	{
+		readSwfHeader,
+		readCompressionHeader,
+		readMovieHeader,
+		readTagData,
+		finished,
+	}
+
+	public State              state;
+	public bool               didWarn; /// emitWarning() was called
+
+	public SwfHeader          swfHeader;
+	public SwfMovieHeader     movieHeader;
+	public LimitAppender2!13  compressionHeader = {limit: 13};
+
+	private LimitAppender2!13 fileData;   /// temporary for holding header data
+	private bool              endOfInput; /// no more data will be coming in
+
+	private AnyDecomp         decompressor;
+	private bool              decompressorEndOfOutput; /// decompression finished, no more output
+	private JunkAppender      decompressorUnusedData;  /// extra data past zlib/lzma body
+
+	private SwfDataAppender   swfData;
+
+	public void initialize()
+	{
+		setJunkSizeLimit(32);
+	}
+
+	public ~this()
+	{
+		decompressor.base.deinitialize();
+	}
+
+	/**
+	 * set a limit on how much junk data to keep buffered
+	 */
+	public void setJunkSizeLimit(size_t size)
+	{
+		// nothing has been appended yet
+		assert(!decompressorUnusedData.total);
+		assert(!swfData.unusedSwfData.total);
+		assert(!swfData.junkData.total);
+
+		decompressorUnusedData.limit = size;
+		swfData.overflowSwfData.limit = size;
+		swfData.unusedSwfData.limit = size;
+		swfData.junkData.limit = size;
+	}
+
+	/**
+	 * feed more data into the reader
+	 */
+	public void put(scope const(ubyte)[] data)
+	in (!endOfInput)
+	{
+		final switch (state)
+		{
+			case State.readSwfHeader:
+			{
+				putSwfHeaderData(data);
+				break;
+			}
+
+			case State.readCompressionHeader:
+			{
+				putCompressionHeaderData(data);
+				break;
+			}
+
+			// decompressor initialized
+			case State.readMovieHeader:
+			case State.readTagData:
+			case State.finished:
+			{
+				putDecompressSwfData(data);
+				break;
+			}
+		}
+	}
+
+	/**
+	 * tell the reader that there will be no more data coming in
+	 * 
+	 * notes:
+	 * - this doesn't change .state
+	 * - nextTag() should be called after this if you were reading tags
+	 */
+	public void putEndOfInput()
+	in (!endOfInput)
+	{
+		endOfInput = true;
+
+		final switch (state)
+		{
+			case State.readSwfHeader:
+			{
+				// skip this if we already printed "bad swf header"
+				if (!(didWarn && !swfHeader.isValid))
+				{
+					emitWarning("swf header incomplete");
+				}
+				break;
+			}
+			case State.readCompressionHeader:
+			{
+				emitWarning("compression header incomplete");
+				break;
+			}
+			case State.readMovieHeader:
+			{
+				emitWarning("movie header incomplete");
+				break;
+			}
+			case State.readTagData:
+			{
+				// tag reading in progress
+				// the next readTag will see endOfInput and update the state
+				break;
+			}
+			case State.finished:
+			{
+				// ok, already finished reading tags
+				break;
+			}
+		}
+
+		// were we still decompressing stuff?
+		if (
+			state > State.readCompressionHeader &&
+			swfHeader.isCompressed &&
+			!decompressorEndOfOutput)
+		{
+			emitWarning("unexpected end of compressed body");
+		}
+	}
+
+	/**
+	 * read the next tag if available
+	 * 
+	 * note: `tagOut.data` points to an internal buffer whose contents may be
+	 *  overwritten by the next call to readTag() or put()
+	 */
+	public bool readTag(out SwfTag tagOut)
+	{
+		if (expect(state != State.readTagData, false))
+			return false;
+
+		/*
+		 * did we overflow the swf data earlier?
+		 * if so, just wait for the file to end and set State.finished when it happens
+		 */
+		if (expect(swfData.isOverflowed, false))
+		{
+			if (endOfInput)
+				state = State.finished;
+
+			return false;
+		}
+
+		auto br = swfData.getReader();
+
+		// ended cleanly without an end tag (no excess data)
+		if (!br.totalBits && endOfInput)
+		{
+			swfData.setSwfReadFinished();
+			state = State.finished;
+			return false;
+		}
+
+		uint   x      = br.read!ushort;
+		uint   code   = x >> 6;
+		size_t length = x & 0b111111;
+
+		bool longFormat = (length == 0x3f);
+		if (longFormat)
+		{
+			length = br.read!uint;
+		}
+
+		bool   tagHeaderOverflow = br.overflow;
+		size_t tagHeaderSize = bitsToBytes(br.curBit);
+
+		const(ubyte)[] tagData = br.readBytesNoCopy(length);
+
+		// not enough data to parse the tag?
+		if (br.overflow)
+		{
+			/*
+			 * already read the file, no more data coming in?
+			 */
+			if (expect(endOfInput, false))
+			{
+				const(char)* specific;
+				if (br.data.length < 2)
+				{
+					specific = "tag code and length";
+				}
+				else if (longFormat && br.data.length < 6)
+				{
+					specific = "long tag length";
+				}
+
+				if (specific)
+				{
+					explainBytes(br.data, (scope exp)
+					{
+						emitWarning("overflow reading %s (bytes=<%.*s>)",
+							specific,
+							cast(int)exp.length, exp.ptr,
+							);
+					});
+				}
+				else
+				{
+					size_t tagDataAvail = (br.data.length - 2);
+					if (longFormat)
+						tagDataAvail -= 4;
+
+					explainBytes(br.data, 12, (scope exp)
+					{
+						emitWarning("overflow reading tag data (code=%u length=%zu avail=%zu bytes=<%.*s>)",
+							code,
+							length,
+							tagDataAvail,
+							cast(int)exp.length, exp.ptr,
+							);
+					});
+				}
+
+				swfData.setSwfReadFinishedWithOverflow();
+				state = State.finished;
+				return false;
+			}
+			/*
+			 * so we're not finished reading. would the tag data actually fit in the file?
+			 * 
+			 * 1. if the end exceeds the uncompressed filesize, the tag would be ignored - so no need to buffer it
+			 * 2. if the end exceeds int.max, flash player closes
+			 * 
+			 * this pretty much just detects the other overflow case early, before "br.overflow && endOfInput" is true
+			 */
+			if (expect(!tagHeaderOverflow, true)) // <-- check it only if we could read this thing
+			{
+				ulong tagDataEnd = swfData.swfReadOffset + tagHeaderSize + length;
+				if (expect(tagDataEnd > swfHeader.fileSize, false))
+				{
+					emitWarning("tag data would overflow file: %llu > %u (extra: %llu)",
+						tagDataEnd,
+						swfHeader.fileSize,
+						tagDataEnd - swfHeader.fileSize,
+						);
+
+					swfData.setSwfReadFinishedWithOverflow();
+					// call recursively once to check the end condition
+					return readTag(tagOut);
+				}
+			}
+			/*
+			 * so we're just finished reading tags for now.
+			 * 
+			 * use this opportunity to compact the buffer
+			 * 
+			 * NOTE: invalidates malloc, but there should be no references to it
+			 */
+			swfData.compact();
+
+			return false;
+		}
+
+		{
+			// old gdc lacks named arguments
+			SwfTag tmp = {
+				code:       code,
+				data:       tagData,
+				longFormat: longFormat,
+				fileOffset: swfData.swfReadOffset,
+			};
+			tagOut = tmp;
+		}
+
+		swfData.advanceBy(bitsToBytes(br.curBit));
+
+		// end tag?
+		if (expect(code == 0, false))
+		{
+			swfData.setSwfReadFinished();
+			state = State.finished;
+		}
+
+		return true;
+	}
+
+	/// overall size of valid swf data (movie header and parsed tags)
+	public ulong validSwfDataSize() const
+	{
+		return swfData.swfDataValidTotal;
+	}
+
+	/// overall crc of valid swf data (movie header and parsed tags)
+	public uint validSwfDataCrc() const
+	{
+		return swfData.swfDataValidCrc;
+	}
+
+	/**
+	 * Get the "unused SWF data" of the file.
+	 * 
+	 * - For both compressed and uncompressed files, this is the data included
+	 *   in the file size specified in the SWF header that wasn't consumed when
+	 *   reading tags.
+	 */
+	public DataCrc getUnusedSwfData() const
+	{
+		// must read tags to completion first
+		if (state != State.finished)
+		{
+			return DataCrc.init;
+		}
+
+		return DataCrc.from(swfData.unusedSwfData);
+	}
+
+	/**
+	 * Get the "overflow SWF data" of the file.
+	 * 
+	 * - For both compressed and uncompressed files, this is the data included
+	 *   in the file size specified in the SWF header that was ignored because
+	 *   a tag overflows the size.
+	 */
+	public DataCrc getOverflowSwfData() const
+	{
+		return DataCrc.from(swfData.overflowSwfData);
+	}
+
+	/**
+	 * Get the "compressed junk data" of the file.
+	 * 
+	 * - For compressed files, this is data inside the compressed body that
+	 *   wasn't included in the uncompressed file size specified in the SWF
+	 *   header.
+	 */
+	public DataCrc getCompressedJunkData() const
+	{
+		if (swfHeader.isCompressed)
+		{
+			return DataCrc.from(swfData.junkData);
+		}
+		else
+		{
+			return DataCrc.init;
+		}
+	}
+
+	/**
+	 * Get the "EOF junk data" of the file.
+	 * 
+	 * - For compressed files, this is data after the compressed zlib/lzma
+	 *   stream in the file.
+	 * 
+	 * - For uncompressed files, this is data past the file size specified in
+	 *   the SWF header.
+	 */
+	public DataCrc getEofJunkData() const
+	{
+		if (swfHeader.isCompressed)
+		{
+			return DataCrc.from(decompressorUnusedData);
+		}
+		else
+		{
+			return DataCrc.from(swfData.junkData);
+		}
+	}
+
+	@cold
+	private void emitWarning(string msg)
+	{
+		pragma(inline, false);
+		didWarn = true;
+		printf("# %.*s\n", cast(int)msg.length, msg.ptr);
+	}
+
+	@cold
+	extern(C)
+	pragma(printf)
+	private void emitWarning(scope const(char)* fmt, scope ...)
+	{
+		pragma(inline, false);
+		didWarn = true;
+		va_list ap;
+		va_start(ap, fmt);
+		printf("# ");
+		vprintf(fmt, ap);
+		printf("\n");
+		va_end(ap);
+	}
+
+	/**
+	 * called by put() when reading the swf reader
+	 */
+	private void putSwfHeaderData(scope const(ubyte)[] data)
+	in (state == State.readSwfHeader)
+	{
+		if (!fileData.limit)
+		{
+			fileData.limit = SwfHeader.sizeof;
+		}
+		fileData.appendFromRef(data);
+
+		if (!fileData.isFull)
+			return;
+
+		swfHeader = fileData[].as!SwfHeader;
+		fileData.reset();
+
+		const(char)* invalidReason = swfHeader.validate;
+		if (invalidReason)
+		{
+			explainBytes(swfHeader.asBytes, 8, (scope exp)
+			{
+				emitWarning("bad swf header (%s): %.*s",
+					invalidReason,
+					cast(int)exp.length, exp.ptr);
+			});
+		}
+
+		swfData.initialize(swfHeader);
+
+		if (swfHeader.isCompressed)
+		{
+			state = State.readCompressionHeader;
+		}
+		else
+		{
+			decompressor.null_.initialize();
+			state = State.readMovieHeader;
+		}
+
+		if (data.length)
+			put(data);
+	}
+
+	/**
+	 * called by put() when reading the zlib/lzma compression header
+	 */
+	private void putCompressionHeaderData(scope const(ubyte)[] data)
+	in (state == State.readCompressionHeader)
+	{
+		assert(swfHeader.isCompressed);
+
+		if (!fileData.limit)
+		{
+			if (swfHeader.isZlibCompressed)
+				fileData.limit = 2;
+			if (swfHeader.isLzmaCompressed)
+				fileData.limit = SwfLzmaExtraData.sizeof;
+		}
+		fileData.appendFromRef(data);
+
+		if (!fileData.isFull)
+			return;
+
+		// if the zlib header says that a dictionary should be used, then read 4 more bytes for its checksum
+		// flash doesn't support this, will say "Movie not loaded"
+		// https://stackoverflow.com/a/30794147
+		// https://stackoverflow.com/a/54915442
+		if (swfHeader.isZlibCompressed && ((fileData[])[1] & 0b1_00000))
+		{
+			fileData.limit = 6;
+			fileData.appendFromRef(data);
+
+			if (!fileData.isFull)
+				return;
+		}
+
+		compressionHeader = fileData[].idup;
+		fileData.reset();
+
+		/*
+		 * ok, we have the relevant compression header and can start
+		 * decompressing now
+		 * 
+		 * create the decompressor and pass it the header we read
+		 */
+
+		state = State.readMovieHeader;
+
+		if (swfHeader.isZlibCompressed)
+		{
+			checkZlibHeader();
+
+			if (expect(!decompressor.zlib.initialize(), false))
+				decompressor.null_.initialize();
+
+			put(compressionHeader[]);
+		}
+		else if (swfHeader.isLzmaCompressed)
+		{
+			checkLzmaHeader();
+
+			if (expect(!decompressor.lzma.initialize(), false))
+				decompressor.null_.initialize();
+
+			put(compressionHeader[].as!SwfLzmaExtraData.toLzmaHeader);
+		}
+
+		if (data.length)
+			put(data);
+	}
+
+	private void checkZlibHeader()
+	{
+		// 2 or 6 bytes
+		assert(compressionHeader.length >= 2);
+
+		// https://www.rfc-editor.org/rfc/rfc1950
+		uint method  = compressionHeader[0] & 0b1111;
+		uint info    = compressionHeader[0] >> 4;
+		uint check   = compressionHeader[1] & 0b11111;
+		uint usedict = (compressionHeader[1] >> 5) & 1;
+		uint level   = compressionHeader[1] >> 6;
+
+		uint combined = compressionHeader[0]*256+compressionHeader[1];
+		if (expect(combined % 31 != 0, false))
+		{
+			emitWarning("zlib header error: checksum mismatch: 0x%04x %% 31 != 0", combined);
+			return;
+		}
+
+		if (expect(method != 8, false))
+		{
+			emitWarning("zlib header error: unknown compression method %u", method);
+			return;
+		}
+
+		if (expect(info > 7, false))
+		{
+			// note: actual window size is this value plus eight
+			emitWarning("zlib header error: bad window size value: %u > 7", info);
+		}
+
+		if (expect(usedict != 0, false))
+		{
+			emitWarning("zlib header error: dictionary required to decompress");
+		}
+	}
+
+	private void checkLzmaHeader()
+	{
+		auto header = compressionHeader[].as!SwfLzmaExtraData;
+
+		// https://git.tukaani.org/?p=xz.git;a=blob;f=doc/lzma-file-format.txt;h=4865defd5cf22716d68dbc4621897e6186afffe5;hb=HEAD
+
+		if (header.properties > (4 * 5 + 4) * 9 + 8)
+		{
+			emitWarning("lzma header error: bad properties field");
+			return;
+		}
+	}
+
+	/**
+	 * called by put() when we're in the compressed part
+	 */
+	private void putDecompressSwfData(scope const(ubyte)[] data)
+	in (
+		state == State.readMovieHeader ||
+		state == State.readTagData ||
+		state == State.finished)
+	{
+		assert(data.length);
+
+		if (!decompressorEndOfOutput)
+		{
+			int err = decompressor.base.put(data, (scope buf)
+			{
+				swfData.put(buf);
+				return 0;
+			});
+			if (expect(err != 0, false))
+			{
+				const(char)* type = decompressor.base.type();
+				const(char)* errmsg = decompressor.base.strerror(err);
+				ulong bytesIn = decompressor.base.bytesIn;
+				ulong bytesOut = decompressor.base.bytesOut;
+				emitWarning("%s decompression error: %s (code=%d in=%llu out=%llu)",
+					type,
+					errmsg,
+					err,
+					bytesIn,
+					bytesOut,
+					);
+			}
+		}
+
+		// decompression finished?
+		if (data !is null)
+		{
+			//fprintf(stderr, "-end of decompressed output\n");
+			assert(swfHeader.isCompressed); // uncompressed shouldn't get here
+			decompressorEndOfOutput = true;
+			decompressorUnusedData.put(data);
+		}
+
+		if (state == State.readMovieHeader)
+		{
+			auto br = swfData.getReader();
+			movieHeader = SwfMovieHeader(br);
+			if (!br.overflow)
+			{
+				swfData.advanceBy(bitsToBytes(br.curBit));
+				// ok, ready to read tags now
+				state = State.readTagData;
+			}
+		}
+	}
+}
+
+private:
+
+version(unittest) import std.string : representation;
+
+// tiny swf, ends normally without an end tag
+unittest
+{
+	auto sr = SwfReader();
+	sr.put("FWS\x01".representation);
+	sr.put(uint(8+1+2+2).asBytes);
+	sr.put(x"00"); // rect
+	sr.put(x"00 00"); // frameRate
+	sr.put(x"00 00"); // frameCount
+	sr.putEndOfInput();
+	assert(!sr.didWarn);
+
+	SwfTag tag;
+	if (sr.readTag(tag)) assert(0);
+}
+
+// normal uncompressed swf
+unittest
+{
+	auto sr = SwfReader();
+	sr.initialize();
+	sr.put("FWS\x01".representation);
+	sr.put(uint((8+1+2+2)+2).asBytes);
+	sr.put(x"00"); // rect
+	sr.put(x"ab cd"); // frameRate
+	assert(sr.validSwfDataSize == 0);
+	sr.put(x"12 34"); // frameCount
+	assert(sr.validSwfDataSize == 5);
+	sr.put(x"00 00"); // End
+	sr.putEndOfInput();
+	assert(!sr.didWarn);
+
+	assert(sr.movieHeader.frameRate[0] == 0xab);
+	assert(sr.movieHeader.frameRate[1] == 0xcd);
+	assert(sr.movieHeader.frameCount == 0x3412);
+
+	SwfTag tag;
+	assert(sr.validSwfDataSize == 5);
+	if (!sr.readTag(tag)) assert(0);
+	assert(sr.validSwfDataSize == 7);
+	assert(tag.code == 0);
+	assert(!tag.data.length);
+	if (sr.readTag(tag)) assert(0);
+
+	assert(sr.getUnusedSwfData[] == "");
+	assert(sr.getEofJunkData[] == "");
+}
+
+// normal compressed swf
+unittest
+{
+	static import std.zlib; // grep: unittest
+	ubyte[] compress(scope const(ubyte)[] data)
+	{
+		return std.zlib.compress(data);
+	}
+	auto sr = SwfReader();
+	sr.initialize();
+	sr.put("CWS\x01".representation);
+	sr.put(uint((8+1+2+2)+2).asBytes);
+	sr.put(compress(
+		"\x00".representation~ // rect
+		"\xab\xcd".representation~ // frameRate
+		"\x12\x34".representation~ // frameCount
+		"\x00\x00".representation // End
+	));
+	sr.putEndOfInput();
+	assert(!sr.didWarn);
+
+	assert(sr.movieHeader.frameRate[0] == 0xab);
+	assert(sr.movieHeader.frameRate[1] == 0xcd);
+	assert(sr.movieHeader.frameCount == 0x3412);
+
+	SwfTag tag;
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 0);
+	assert(!tag.data.length);
+	if (sr.readTag(tag)) assert(0);
+
+	assert(sr.getUnusedSwfData[] == "");
+	assert(sr.getCompressedJunkData[] == "");
+	assert(sr.getEofJunkData[] == "");
+}
+
+// empty file with:
+// - swf data past end tag (swf junk)
+// - file data past header size (eof junk)
+unittest
+{
+	auto sr = SwfReader();
+	sr.initialize();
+	sr.put("FWS\x01".representation);
+	sr.put(uint((8+1+2+2)+2+2).asBytes);
+	sr.put(x"00"); // rect
+	sr.put(x"00 00"); // frameRate
+	sr.put(x"00 00"); // frameCount
+	sr.put(x"00 00"); // End
+	sr.put(x"01 02"); // swf junk (included in header size)
+	sr.put(x"03 04"); // eof junk (past header size)
+	sr.putEndOfInput();
+
+	assert(sr.swfData.getReader.data == "\x00\x00\x01\x02");
+	assert(sr.swfData.junkData[] == "\x03\x04");
+
+	SwfTag tag;
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 0);
+	assert(!tag.data.length);
+	if (sr.readTag(tag)) assert(0);
+
+	assert(sr.getUnusedSwfData[] == "\x01\x02");
+	assert(sr.getCompressedJunkData[] == "");
+	assert(sr.getEofJunkData[] == "\x03\x04");
+}
+
+// compressed swf with
+// - unused swf data included in header size
+// - unused decompressed data not included in header size
+// - unused file data past compressed body
+unittest
+{
+	static import std.zlib; // grep: unittest
+	ubyte[] compress(scope const(ubyte)[] data)
+	{
+		return std.zlib.compress(data);
+	}
+	auto sr = SwfReader();
+	sr.initialize();
+	sr.put("CWS\x01".representation);
+	sr.put(uint((8+1+2+2)+2+2).asBytes);
+	sr.put(compress(
+		"\x00".representation~ // rect
+		"\xab\xcd".representation~ // frameRate
+		"\x12\x34".representation~ // frameCount
+		"\x00\x00".representation~ // End
+		"\x01\x02".representation~ // swf junk (included in header size)
+		"\x03\x04".representation // swf junk (included in compressed body but not header size)
+	));
+	sr.put("\x05\x06".representation); // eof junk
+	sr.putEndOfInput();
+	assert(!sr.didWarn);
+
+	assert(sr.movieHeader.frameRate[0] == 0xab);
+	assert(sr.movieHeader.frameRate[1] == 0xcd);
+	assert(sr.movieHeader.frameCount == 0x3412);
+
+	assert(sr.swfData.getReader.data == "\x00\x00\x01\x02");
+	assert(sr.swfData.junkData[] == "\x03\x04");
+
+	SwfTag tag;
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 0);
+	assert(!tag.data.length);
+	if (sr.readTag(tag)) assert(0);
+
+	assert(sr.getUnusedSwfData[] == "\x01\x02");
+	assert(sr.getCompressedJunkData[] == "\x03\x04");
+	assert(sr.getEofJunkData[] == "\x05\x06");
+}
+
+// fileOffset (uncompressed)
+unittest
+{
+	auto sr = SwfReader();
+	sr.initialize();
+	sr.put("FWS\x01".representation);
+	sr.put(uint((8+1+2+2)+2+2).asBytes);
+	sr.put(x"00"); // rect
+	sr.put(x"ab cd"); // frameRate
+	sr.put(x"12 34"); // frameCount
+	sr.put(x"40 00"); // ShowFrame
+	sr.put(x"00 00"); // End
+	sr.putEndOfInput();
+
+	SwfTag tag;
+	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 13);
+	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 15);
+	if (sr.readTag(tag)) assert(0);
+}
+
+// fileOffset (compressed)
+unittest
+{
+	static import std.zlib; // grep: unittest
+	ubyte[] compress(scope const(ubyte)[] data)
+	{
+		return std.zlib.compress(data);
+	}
+	auto sr = SwfReader();
+	sr.initialize();
+	sr.put("CWS\x01".representation);
+	sr.put(uint((8+1+2+2)+2+2).asBytes);
+	sr.put(compress(
+		"\x00".representation~ // rect
+		"\xab\xcd".representation~ // frameRate
+		"\x12\x34".representation~ // frameCount
+		"\x40\x00".representation~ // ShowFrame
+		"\x00\x00".representation // End
+	));
+	sr.putEndOfInput();
+
+	SwfTag tag;
+	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 13);
+	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 15);
+	if (sr.readTag(tag)) assert(0);
+}
+
+/**
+ * cast byte array to struct
+ */
+T as(T)(scope const(ubyte)[] data)
+if (__traits(getPointerBitmap, T) == [T.sizeof, 0]) // no pointers
+{
+	assert(data.length == T.sizeof);
+	return *cast(T*)data.ptr;
+}
+
+/**
+ * cast struct to byte array
+ */
+auto ref inout(ubyte)[T.sizeof] asBytes(T)(return auto ref inout(T) val)
+if (__traits(getPointerBitmap, T) == [T.sizeof, 0]) // no pointers
+{
+	return *cast(ubyte[T.sizeof]*)&val;
+}
+
+auto min(A, B)(A a, B b)
+if (is(A == B))
+{
+	if (b < a) a = b;
+	return a;
+}
+
+auto max(A, B)(A a, B b)
+if (is(A == B))
+{
+	if (b > a) a = b;
+	return a;
+}
