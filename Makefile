@@ -17,7 +17,7 @@ endif
 ifeq ($(OPT),1)
 DMDFLAGS += -O -inline -mcpu=native
 LDCFLAGS += -O3 -flto=full -mcpu=native --fvisibility=hidden -fno-exceptions
-GDCFLAGS += -O2 -flto -mcpu=native -fvisibility=hidden -fno-exceptions
+GDCFLAGS += -O2 -flto=auto -march=native -fvisibility=hidden -fno-exceptions
 endif
 ifeq ($(RELEASE),1)
 # don't recommend even though i haven't seen a violation in ages
@@ -42,6 +42,7 @@ swfbiganal2: $(SRCS)
 swfbiganal3: $(SRCS)
 	$(GDC) $(GDCFLAGS) $^ -o $@ $(GDCLIBS) && size $@
 
+.PHONY: watch watchldc watchgdc
 watch:
 	ls $(SRCS) | entr -cs 'make -s'
 watchldc:
@@ -53,9 +54,9 @@ _test_swfbiganal: DMDFLAGS += -unittest
 _test_swfbiganal: LDCFLAGS += --unittest
 _test_swfbiganal: GDCFLAGS += -funittest
 _test_swfbiganal: $(SRCS)
-#	$(DMD) $(DMDFLAGS) $^ -of=$@ $(DMDLIBS)
-#	$(LDC) $(LDCFLAGS) $^ --of=$@ $(LDCLIBS)
-	$(GDC) $(GDCFLAGS) $^ -o $@ $(GDCLIBS)
+#	$(DMD) $(DMDFLAGS) $^ -of=$@ $(DMDLIBS) && size $@
+#	$(LDC) $(LDCFLAGS) $^ --of=$@ $(LDCLIBS) && size $@
+	$(GDC) $(GDCFLAGS) $^ -o $@ $(GDCLIBS) && size $@
 
 .PHONY: test
 test: _test_swfbiganal
