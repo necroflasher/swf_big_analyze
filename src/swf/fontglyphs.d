@@ -37,14 +37,14 @@ private struct GlyphEntity
 		return (bytes[0] != 0xff);
 	}
 
-	char[] asText()
+	char[] asText() return
 	{
 		assert(isValid);
 
 		return cast(char[])bytes[0..utf8_len(bytes[0])];
 	}
 
-	ref ubyte flagByte()
+	ref ubyte flagByte() return
 	{
 		assert(!isValid);
 

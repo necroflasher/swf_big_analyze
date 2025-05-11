@@ -20,8 +20,8 @@ struct Decomp
 	{
 		int function(scope ref const(ubyte)[], scope int delegate(scope const(ubyte)[])) put;
 		void function() deinitialize;
-		@cold const(char)* function(int) strerror;
-		@cold const(char)* function() type;
+		const(char)* function(int) strerror;
+		const(char)* function() type;
 		size_t classSize;
 	}
 
