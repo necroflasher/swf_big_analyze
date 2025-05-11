@@ -655,13 +655,18 @@ struct SwfReader
 
 private:
 
-version(unittest) import std.string : representation;
+version (unittest)
+ubyte[] compress(string data)
+{
+	static import std.zlib; // grep: unittest
+	return std.zlib.compress(cast(ubyte[])data);
+}
 
 // tiny swf, ends normally without an end tag
 unittest
 {
 	auto sr = SwfReader();
-	sr.put("FWS\x01".representation);
+	sr.put("FWS\x01");
 	sr.put(uint(8+1+2+2).asBytes);
 	sr.put("\x00"); // rect
 	sr.put("\x00\x00"); // frameRate
@@ -678,7 +683,7 @@ unittest
 {
 	auto sr = SwfReader();
 	sr.initialize();
-	sr.put("FWS\x01".representation);
+	sr.put("FWS\x01");
 	sr.put(uint((8+1+2+2)+2).asBytes);
 	sr.put("\x00"); // rect
 	sr.put("\xab\xcd"); // frameRate
@@ -708,20 +713,15 @@ unittest
 // normal compressed swf
 unittest
 {
-	static import std.zlib; // grep: unittest
-	ubyte[] compress(scope const(ubyte)[] data)
-	{
-		return std.zlib.compress(data);
-	}
 	auto sr = SwfReader();
 	sr.initialize();
-	sr.put("CWS\x01".representation);
+	sr.put("CWS\x01");
 	sr.put(uint((8+1+2+2)+2).asBytes);
 	sr.put(compress(
-		"\x00".representation~ // rect
-		"\xab\xcd".representation~ // frameRate
-		"\x12\x34".representation~ // frameCount
-		"\x00\x00".representation // End
+		"\x00"~     // rect
+		"\xab\xcd"~ // frameRate
+		"\x12\x34"~ // frameCount
+		"\x00\x00"  // End
 	));
 	sr.putEndOfInput();
 	assert(!sr.didWarn);
@@ -748,7 +748,7 @@ unittest
 {
 	auto sr = SwfReader();
 	sr.initialize();
-	sr.put("FWS\x01".representation);
+	sr.put("FWS\x01");
 	sr.put(uint((8+1+2+2)+2+2).asBytes);
 	sr.put("\x00"); // rect
 	sr.put("\x00\x00"); // frameRate
@@ -778,24 +778,19 @@ unittest
 // - unused file data past compressed body
 unittest
 {
-	static import std.zlib; // grep: unittest
-	ubyte[] compress(scope const(ubyte)[] data)
-	{
-		return std.zlib.compress(data);
-	}
 	auto sr = SwfReader();
 	sr.initialize();
-	sr.put("CWS\x01".representation);
+	sr.put("CWS\x01");
 	sr.put(uint((8+1+2+2)+2+2).asBytes);
 	sr.put(compress(
-		"\x00".representation~ // rect
-		"\xab\xcd".representation~ // frameRate
-		"\x12\x34".representation~ // frameCount
-		"\x00\x00".representation~ // End
-		"\x01\x02".representation~ // swf junk (included in header size)
-		"\x03\x04".representation // swf junk (included in compressed body but not header size)
+		"\x00"~     // rect
+		"\xab\xcd"~ // frameRate
+		"\x12\x34"~ // frameCount
+		"\x00\x00"~ // End
+		"\x01\x02"~ // swf junk (included in header size)
+		"\x03\x04"  // swf junk (included in compressed body but not header size)
 	));
-	sr.put("\x05\x06".representation); // eof junk
+	sr.put("\x05\x06"); // eof junk
 	sr.putEndOfInput();
 	assert(!sr.didWarn);
 
@@ -822,7 +817,7 @@ unittest
 {
 	auto sr = SwfReader();
 	sr.initialize();
-	sr.put("FWS\x01".representation);
+	sr.put("FWS\x01");
 	sr.put(uint((8+1+2+2)+2+2).asBytes);
 	sr.put("\x00"); // rect
 	sr.put("\xab\xcd"); // frameRate
@@ -840,21 +835,16 @@ unittest
 // fileOffset (compressed)
 unittest
 {
-	static import std.zlib; // grep: unittest
-	ubyte[] compress(scope const(ubyte)[] data)
-	{
-		return std.zlib.compress(data);
-	}
 	auto sr = SwfReader();
 	sr.initialize();
-	sr.put("CWS\x01".representation);
+	sr.put("CWS\x01");
 	sr.put(uint((8+1+2+2)+2+2).asBytes);
 	sr.put(compress(
-		"\x00".representation~ // rect
-		"\xab\xcd".representation~ // frameRate
-		"\x12\x34".representation~ // frameCount
-		"\x40\x00".representation~ // ShowFrame
-		"\x00\x00".representation // End
+		"\x00"~     // rect
+		"\xab\xcd"~ // frameRate
+		"\x12\x34"~ // frameCount
+		"\x40\x00"~ // ShowFrame
+		"\x00\x00"  // End
 	));
 	sr.putEndOfInput();
 
@@ -881,18 +871,4 @@ auto ref inout(ubyte)[T.sizeof] asBytes(T)(return auto ref inout(T) val)
 if (__traits(getPointerBitmap, T) == [T.sizeof, 0]) // no pointers
 {
 	return *cast(ubyte[T.sizeof]*)&val;
-}
-
-auto min(A, B)(A a, B b)
-if (is(A == B))
-{
-	if (b < a) a = b;
-	return a;
-}
-
-auto max(A, B)(A a, B b)
-if (is(A == B))
-{
-	if (b > a) a = b;
-	return a;
 }
