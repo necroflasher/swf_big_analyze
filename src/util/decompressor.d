@@ -4,6 +4,7 @@ import core.stdc.stdio;
 import core.stdc.string;
 import etc.c.zlib;
 import swfbiganal.cdef.lzma;
+import swfbiganal.globals;
 import swfbiganal.util.compiler;
 
 union AnyDecomp
@@ -156,7 +157,7 @@ struct ZlibDecomp
 
 	int put(scope ref const(ubyte)[] inbuf, scope int delegate(scope const(ubyte)[]) cb)
 	{
-		align(16) ubyte[2*128*1024] outbuf = void;
+		align(16) ubyte[GlobalConfig.DecompressBufferSize] outbuf = void;
 
 		for (;;)
 		{
@@ -241,7 +242,7 @@ struct LzmaDecomp
 
 	int put(scope ref const(ubyte)[] inbuf, scope int delegate(scope const(ubyte)[]) cb)
 	{
-		align(16) ubyte[2*128*1024] outbuf = void;
+		align(16) ubyte[GlobalConfig.DecompressBufferSize] outbuf = void;
 
 		for (;;)
 		{

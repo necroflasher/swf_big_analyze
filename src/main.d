@@ -175,7 +175,7 @@ endNoRt:
 
 bool readSwf(int fd)
 {
-	align(16) ubyte[128*1024] buf = void;
+	align(16) ubyte[GlobalConfig.ReadBufferSize] buf = void;
 
 	auto sr = SwfReader();
 	sr.initialize();
