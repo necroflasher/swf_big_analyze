@@ -94,7 +94,7 @@ unittest
 	assert(ra[].ptr == null);
 
 	// append, check properties
-	const(ubyte)[] someBytes = x"01 02 03 04";
+	const(ubyte)[] someBytes = cast(ubyte[])"\x01\x02\x03\x04";
 	ra.put(someBytes);
 	assert(ra.totalAppended == 4);
 	assert(ra.effectiveOffset == 0);
@@ -102,23 +102,23 @@ unittest
 	assert(ra[].ptr != someBytes.ptr);
 
 	// advance, check properties
-	assert(ra.advanceBy(1) == x"01");
+	assert(ra.advanceBy(1) == "\x01");
 	assert(ra.totalAppended == 4);
 	assert(ra.effectiveOffset == 1);
 	assert(ra[] == someBytes[1..$]);
 
 	// advance again, check properties
-	assert(ra.advanceBy(2) == x"02 03");
+	assert(ra.advanceBy(2) == "\x02\x03");
 	assert(ra.totalAppended == 4);
 	assert(ra.effectiveOffset == 3);
 	assert(ra[] == someBytes[3..$]);
 
 	// append again, check properties
-	const(ubyte)[] moreBytes = x"0a 0b 0c 0d";
+	const(ubyte)[] moreBytes = cast(ubyte[])"\x0a\x0b\x0c\x0d";
 	ra.put(moreBytes);
 	assert(ra.totalAppended == 8);
 	assert(ra.effectiveOffset == 3);
-	assert(ra[] == x"04 0a 0b 0c 0d");
+	assert(ra[] == "\x04\x0a\x0b\x0c\x0d");
 }
 
 unittest

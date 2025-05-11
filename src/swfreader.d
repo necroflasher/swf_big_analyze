@@ -110,6 +110,12 @@ struct SwfReader
 		}
 	}
 
+	version (unittest)
+	public void put(string data)
+	{
+		put(cast(const(ubyte)[])data);
+	}
+
 	/**
 	 * tell the reader that there will be no more data coming in
 	 * 
@@ -657,9 +663,9 @@ unittest
 	auto sr = SwfReader();
 	sr.put("FWS\x01".representation);
 	sr.put(uint(8+1+2+2).asBytes);
-	sr.put(x"00"); // rect
-	sr.put(x"00 00"); // frameRate
-	sr.put(x"00 00"); // frameCount
+	sr.put("\x00"); // rect
+	sr.put("\x00\x00"); // frameRate
+	sr.put("\x00\x00"); // frameCount
 	sr.putEndOfInput();
 	assert(!sr.didWarn);
 
@@ -674,12 +680,12 @@ unittest
 	sr.initialize();
 	sr.put("FWS\x01".representation);
 	sr.put(uint((8+1+2+2)+2).asBytes);
-	sr.put(x"00"); // rect
-	sr.put(x"ab cd"); // frameRate
+	sr.put("\x00"); // rect
+	sr.put("\xab\xcd"); // frameRate
 	assert(sr.validSwfDataSize == 0);
-	sr.put(x"12 34"); // frameCount
+	sr.put("\x12\x34"); // frameCount
 	assert(sr.validSwfDataSize == 5);
-	sr.put(x"00 00"); // End
+	sr.put("\x00\x00"); // End
 	sr.putEndOfInput();
 	assert(!sr.didWarn);
 
@@ -744,12 +750,12 @@ unittest
 	sr.initialize();
 	sr.put("FWS\x01".representation);
 	sr.put(uint((8+1+2+2)+2+2).asBytes);
-	sr.put(x"00"); // rect
-	sr.put(x"00 00"); // frameRate
-	sr.put(x"00 00"); // frameCount
-	sr.put(x"00 00"); // End
-	sr.put(x"01 02"); // swf junk (included in header size)
-	sr.put(x"03 04"); // eof junk (past header size)
+	sr.put("\x00"); // rect
+	sr.put("\x00\x00"); // frameRate
+	sr.put("\x00\x00"); // frameCount
+	sr.put("\x00\x00"); // End
+	sr.put("\x01\x02"); // swf junk (included in header size)
+	sr.put("\x03\x04"); // eof junk (past header size)
 	sr.putEndOfInput();
 
 	assert(sr.swfData.getReader.data == "\x00\x00\x01\x02");
@@ -818,11 +824,11 @@ unittest
 	sr.initialize();
 	sr.put("FWS\x01".representation);
 	sr.put(uint((8+1+2+2)+2+2).asBytes);
-	sr.put(x"00"); // rect
-	sr.put(x"ab cd"); // frameRate
-	sr.put(x"12 34"); // frameCount
-	sr.put(x"40 00"); // ShowFrame
-	sr.put(x"00 00"); // End
+	sr.put("\x00"); // rect
+	sr.put("\xab\xcd"); // frameRate
+	sr.put("\x12\x34"); // frameCount
+	sr.put("\x40\x00"); // ShowFrame
+	sr.put("\x00\x00"); // End
 	sr.putEndOfInput();
 
 	SwfTag tag;
