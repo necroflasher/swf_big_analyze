@@ -84,6 +84,7 @@ struct FontGlyphs
 	private bool badGlyphsPendingWarning;
 	private bool usesLegacyEncodings;
 	private bool isWide;
+	private const(char)* defaultCharset;
 
 	ushort id;
 
@@ -95,13 +96,19 @@ struct FontGlyphs
 		glyphs = null;
 	}
 
-	this(ushort id, bool isWide, scope const(ubyte)[] mapBytes, uint swfVersion)
+	this(
+		ushort               id,
+		bool                 isWide,
+		scope const(ubyte)[] mapBytes,
+		uint                 swfVersion,
+		const(char)*         defaultCharset)
 	{
 		pragma(inline, false); // big, two call sites
 
 		this.id = id;
 		this.isWide = isWide;
 		this.usesLegacyEncodings = (swfVersion <= 5);
+		this.defaultCharset = defaultCharset;
 
 		const(char)* fontCoding = codingNameForGlyphDecode();
 
@@ -268,8 +275,8 @@ private:
 		}
 		else
 		{
-			if (g_charset)
-				fontCoding = g_charset; // system locale
+			if (defaultCharset)
+				fontCoding = defaultCharset; // system locale
 			if (!fontCoding)
 				fontCoding = "CP1252"; // reasonable fallback
 		}
@@ -293,8 +300,8 @@ private:
 		}
 		else
 		{
-			if (g_charset)
-				fontCoding = g_charset; // system locale
+			if (defaultCharset)
+				fontCoding = defaultCharset; // system locale
 			else
 				fontCoding = "CP1252"; // reasonable fallback
 		}
@@ -328,22 +335,23 @@ unittest
 unittest
 {
 	ParsedFont fnt;
+	const(char)* cs;
 
 	// utf-16 surrogate
-	g_charset = null;
-	fnt = ParsedFont(0, true, [0x00, 0xd8], 6); // little-endian 0xD800
+	cs = null;
+	fnt = ParsedFont(0, true, [0x00, 0xd8], 6, cs); // little-endian 0xD800
 	assert(!fnt.glyphs[0].isValid);
 	assert(fnt.glyphs[0].originalBytes(fnt) == [0xd8, 0x00]);
 
 	// bad "unspecified utf-8"
-	g_charset = null;
-	fnt = ParsedFont(0, false, [0xff], 6);
+	cs = null;
+	fnt = ParsedFont(0, false, [0xff], 6, cs);
 	assert(!fnt.glyphs[0].isValid);
 	assert(fnt.glyphs[0].originalBytes(fnt) == [0xff]);
 
 	// bad SJIS multi-byte
-	g_charset = "CP932"; // Shift_JIS
-	fnt = ParsedFont(0, true, [0xff, 0x81], 5); // little-endian 81 ff
+	cs = "CP932"; // Shift_JIS
+	fnt = ParsedFont(0, true, [0xff, 0x81], 5, cs); // little-endian 81 ff
 	assert(!fnt.glyphs[0].isValid);
 	assert(fnt.glyphs[0].originalBytes(fnt) == [0x81, 0xff]);
 
@@ -363,79 +371,80 @@ unittest
 	// % printf '\x81' | iconv -f CP1252
 	// iconv: illegal input sequence at position 0
 	//
-	g_charset = "CP1252";
-	fnt = ParsedFont(0, false, [0x81], 5);
+	cs = "CP1252";
+	fnt = ParsedFont(0, false, [0x81], 5, cs);
 	assert(!fnt.glyphs[0].isValid);
 	assert(fnt.glyphs[0].originalBytes(fnt) == [0x81]);
 	// same but with wide=true
-	g_charset = "CP1252";
-	fnt = ParsedFont(0, true, [0x81, 0], 5);
+	cs = "CP1252";
+	fnt = ParsedFont(0, true, [0x81, 0], 5, cs);
 	assert(!fnt.glyphs[0].isValid);
 	assert(fnt.glyphs[0].originalBytes(fnt) == [0x81]);
 }
 
 unittest
 {
+	const(char)* cs;
 	enum Invalid = "�";
 
 	// SWF6+, unspecified single-byte
-	auto fnt = ParsedFont(0, false, ['a', 'b', 0], 6);
+	auto fnt = ParsedFont(0, false, ['a', 'b', 0], 6, cs);
 	assert(fnt.glyphText(0) == "a");
 	assert(fnt.glyphText(1) == "b");
 	assert(fnt.glyphText(2) == "\0");
 	assert(fnt.glyphText(3) is null);
 	// SWF6+, UTF-16
-	fnt = ParsedFont(0, true, ['a', 0, 'b', 0], 6);
+	fnt = ParsedFont(0, true, ['a', 0, 'b', 0], 6, cs);
 	assert(fnt.glyphText(0) == "a");
 	assert(fnt.glyphText(1) == "b");
 	assert(fnt.glyphText(2) is null);
 	// SWF5, legacy multi-byte charset
-	g_charset = "CP932"; // Shift_JIS
-	fnt = ParsedFont(0, true, ['a', 0, 'b', 0], 5);
+	cs = "CP932"; // Shift_JIS
+	fnt = ParsedFont(0, true, ['a', 0, 'b', 0], 5, cs);
 	assert(fnt.glyphText(0) == "a");
 	assert(fnt.glyphText(1) == "b");
 	assert(fnt.glyphText(2) is null);
 
-	g_charset = "CP932"; // Shift_JIS
-	fnt = ParsedFont(0, true, [0xa0, 0x82], 5); // note: reverse order from hexdump
+	cs = "CP932"; // Shift_JIS
+	fnt = ParsedFont(0, true, [0xa0, 0x82], 5, cs); // note: reverse order from hexdump
 	assert(fnt.glyphText(0) == "あ");
 	assert(fnt.glyphText(1) is null);
 
 	// wide char without Wide flag
-	g_charset = "CP932"; // Shift_JIS
-	fnt = ParsedFont(0, false, [0x82, 0xa0, 'x'], 5);
+	cs = "CP932"; // Shift_JIS
+	fnt = ParsedFont(0, false, [0x82, 0xa0, 'x'], 5, cs);
 	assert(fnt.glyphText(0) == Invalid);
 	assert(fnt.glyphText(1) == Invalid);
 	assert(fnt.glyphText(2) == "x");
 
 	// INVALID: not an actual multi-byte character
-	g_charset = "CP932"; // Shift_JIS
-	fnt = ParsedFont(0, true, ['a', 'a'], 5);
+	cs = "CP932"; // Shift_JIS
+	fnt = ParsedFont(0, true, ['a', 'a'], 5, cs);
 	assert(fnt.glyphText(0) == Invalid);
 	assert(fnt.glyphText(1) is null);
 
 	// INVALID: multi-byte character spans cells
 	// あ = 82 a0
 	// input to iconv: ['a'-82], [a0-'b']
-	g_charset = "CP932"; // Shift_JIS
-	fnt = ParsedFont(0, true, [0x82, 'a', 'b', 0xa0], 5);
+	cs = "CP932"; // Shift_JIS
+	fnt = ParsedFont(0, true, [0x82, 'a', 'b', 0xa0], 5, cs);
 	assert(fnt.glyphText(0) == Invalid); // "invalid argument", read 1/2 bytes
 	assert(fnt.glyphText(1) == Invalid); // "invalid or incomplete ...", output 0 bytes
 	assert(fnt.glyphText(2) is null);
 
 	// TEST: incomplete MB char in first cell doesn't break the second one
-	g_charset = "CP932"; // Shift_JIS
-	fnt = ParsedFont(0, true, [0x82, 'a', '!', 0], 5);
+	cs = "CP932"; // Shift_JIS
+	fnt = ParsedFont(0, true, [0x82, 'a', '!', 0], 5, cs);
 	assert(fnt.glyphText(0) == Invalid);
 	assert(fnt.glyphText(1) == "!");
-	fnt = ParsedFont(0, true, [0x82, 'a', 'a', 0], 5);
+	fnt = ParsedFont(0, true, [0x82, 'a', 'a', 0], 5, cs);
 	assert(fnt.glyphText(0) == Invalid);
 	assert(fnt.glyphText(1) == "a");
 
-	fnt = ParsedFont(0, true, [0x81, 'x', 0x81, 0x81], 5);
+	fnt = ParsedFont(0, true, [0x81, 'x', 0x81, 0x81], 5, cs);
 	assert(fnt.glyphText(0) == Invalid);
 	assert(fnt.glyphText(1) == "＝");
-	fnt = ParsedFont(0, true, [0x81, 'x', 'y', 0x81], 5);
+	fnt = ParsedFont(0, true, [0x81, 'x', 'y', 0x81], 5, cs);
 	assert(fnt.glyphText(0) == Invalid);
 	assert(fnt.glyphText(1) == "【");
 

@@ -24,7 +24,8 @@ import swfbiganal.util.compiler;
 
 struct TagParserState
 {
-	SwfReader* reader;
+	SwfReader*   reader;
+	const(char)* defaultCharset;
 
 	// function for main.d to print a tag
 	// called for tags found inside sprites
@@ -64,9 +65,9 @@ struct TagParserState
 		else
 		{
 			const(char)* coding = "CP1252";
-			if (g_charset)
+			if (defaultCharset)
 			{
-				coding = g_charset;
+				coding = defaultCharset;
 			}
 			bool ok = buf.transmute(coding, "UTF-8", (scope buf)
 			{
@@ -95,7 +96,13 @@ struct TagParserState
 	{
 		parsedFontById.update(id,
 			() {
-				return ParsedFont(id, isWide, mapBytes, ps.reader.swfHeader.swfVersion);
+				return ParsedFont(
+					id,
+					isWide,
+					mapBytes,
+					ps.reader.swfHeader.swfVersion,
+					defaultCharset,
+				);
 			},
 			(ref ParsedFont old) {
 				// don't replace an existing font if we get a DefineFont for it (it has no glyphs)
@@ -108,7 +115,13 @@ struct TagParserState
 
 				if (!old.hasGlyphs)
 				{
-					old = ParsedFont(id, isWide, mapBytes, ps.reader.swfHeader.swfVersion);
+					old = ParsedFont(
+						id,
+						isWide,
+						mapBytes,
+						ps.reader.swfHeader.swfVersion,
+						defaultCharset,
+					);
 					return;
 				}
 

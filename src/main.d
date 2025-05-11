@@ -33,6 +33,7 @@ extern(C) __gshared string[] rt_options = [
 extern(C) int main(int argc, char** argv)
 {
 	const(char)* currentSwfPath;
+	const(char)* charset;
 	int rv;
 
 	if (expect(!rt_init(), false))
@@ -61,7 +62,7 @@ extern(C) int main(int argc, char** argv)
 
 			if (!strncmp(opt, "-charset=", 9))
 			{
-				g_charset = opt+9;
+				charset = opt+9;
 			}
 			else if (!strcmp(opt, "-tags"))
 			{
@@ -127,7 +128,7 @@ extern(C) int main(int argc, char** argv)
 
 			printFileLine(path, sb.st_size);
 
-			if (expect(!readSwf(fd), false))
+			if (expect(!readSwf(fd, charset), false))
 			{
 				rv = 1;
 			}
@@ -174,7 +175,7 @@ endNoRt:
 	return rv;
 }
 
-bool readSwf(int fd)
+bool readSwf(int fd, const(char)* defaultCharset)
 {
 	align(16) ubyte[GlobalConfig.ReadBufferSize] buf = void;
 
@@ -182,8 +183,9 @@ bool readSwf(int fd)
 	sr.initialize();
 
 	TagParserState parserState = {
-		reader:       &sr,
-		tagPrintFunc: &printTagLine,
+		reader:         &sr,
+		defaultCharset: defaultCharset,
+		tagPrintFunc:   &printTagLine,
 	};
 
 	SwfReader.State prevState;
