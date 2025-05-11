@@ -28,11 +28,6 @@ module swfbiganal.globals;
  */
 __gshared const(char)* g_charset;
 
-/**
- * full path to the swf file currently being parsed
- */
-__gshared const(char)* g_swfFilePath;
-
 struct GlobalConfig
 {
 	/** output a line for each tag (main.d) */
