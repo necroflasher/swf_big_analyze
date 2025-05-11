@@ -259,7 +259,7 @@ int dconv(
 // old version that returns a GC string
 version(unittest) void[] transmute(scope const(void)[] s, const(char)* from, const(char)* to)
 {
-	import std.array : Appender;
+	import std.array : Appender; // grep: unittest
 
 	Appender!(ubyte[]) ap;
 

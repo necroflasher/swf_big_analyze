@@ -5,7 +5,7 @@ import core.stdc.stdio;
 import core.stdc.string;
 import core.sys.posix.fcntl;
 import core.sys.posix.unistd;
-import core.runtime;
+import core.runtime; // grep: unavoidable
 import etc.c.zlib;
 import swfbiganal.globals;
 import swfbiganal.swfreader;
@@ -156,7 +156,7 @@ end:
 
 	static if (0)
 	{{
-		import core.memory;
+		import core.memory; // grep: static if
 		import swfbiganal.util.commaize;
 		char[27] buf = void;
 		fprintf(stderr, "GC total: %s\n", GC.allocatedInCurrentThread().commaize(buf));

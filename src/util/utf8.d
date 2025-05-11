@@ -35,8 +35,9 @@ bool IsUTF8(scope const(ubyte)[] str)
 debug(compareWithPhobos)
 private void compareValidWithPhobos(const(ubyte)[] str, bool thisLibValid)
 {
-	static import std.utf;
+	static import std.utf; // grep: behind debug version
 	import core.stdc.stdio : printf;
+	pragma(message, __FILE__~": imported std.utf");
 
 	bool phobosValid = true;
 	try

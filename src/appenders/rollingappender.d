@@ -123,7 +123,7 @@ unittest
 
 unittest
 {
-	import core.exception : AssertError;
+	import core.exception : AssertError; // grep: unittest
 
 	RollingAppender ra;
 	bool ok;

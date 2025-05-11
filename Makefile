@@ -76,3 +76,5 @@ lint:
 	@grep -Enr --color=auto 'pragma\(inline.*\)($$|[^;])' src/ ||:
 # attributes like this need a semicolon at the end of the line so geany's parsing doesn't break
 	@grep -Enr --color=auto '^(\s*(nothrow|@nogc))+:$$' src/ ||:
+# standard lib imports tend to slow down compilation
+	@grep -Pnr --color=auto 'import (std\.|core\.(?!stdc|sys))(?!.*grep:)' src/ ||:
