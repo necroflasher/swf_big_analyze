@@ -31,12 +31,26 @@ extern(C) __gshared string[] rt_options = [
 	"gcopt=incPoolSize:8",
 ];
 
+version(DigitalMars)
+{
+	enum EXENAME = "swfbiganal";
+}
+else version(LDC)
+{
+	enum EXENAME = "swfbiganal2";
+}
+else version(GNU)
+{
+	enum EXENAME = "swfbiganal3";
+}
+
 extern(C) int main(int argc, char** argv)
 {
 	const(char)* currentSwfPath;
 	const(char)* charset;
 	int rv;
 	bool doTagTimeStat;
+	bool hasFiles;
 
 	if (expect(!rt_init(), false))
 	{
@@ -80,18 +94,6 @@ extern(C) int main(int argc, char** argv)
 			}
 			else
 			{
-				version(DigitalMars)
-				{
-					enum EXENAME = "swfbiganal";
-				}
-				else version(LDC)
-				{
-					enum EXENAME = "swfbiganal2";
-				}
-				else version(GNU)
-				{
-					enum EXENAME = "swfbiganal3";
-				}
 				fprintf(stderr, EXENAME~": unknown option '%s'\n", opt);
 				rv = 1;
 				goto end;
@@ -112,6 +114,8 @@ extern(C) int main(int argc, char** argv)
 			{
 				continue;
 			}
+
+			hasFiles = true;
 
 			int fd = open(path, O_RDONLY);
 			if (expect(fd < 0, false))
@@ -156,6 +160,20 @@ extern(C) int main(int argc, char** argv)
 		});
 		fputc('\n', stderr);
 		_exit(1);
+	}
+
+	if (!hasFiles)
+	{
+		fprintf(stderr,
+			"usage: "~EXENAME~" [options] <swf files>\n"~
+			"options:\n"~
+			"    -charset=<cs>  decode SWF1-5 text using charset (e.g. CP932)\n"~
+			"    -stat          print time/space used parsing tags\n"~
+			"    -tags          output a line for every encountered tag\n"~
+			"");
+
+		if (!rv)
+			rv = 1;
 	}
 
 end:
