@@ -13,6 +13,7 @@ import swfbiganal.swftypes.swftag;
 import swfbiganal.swftypes.swfheader;
 import swfbiganal.swftypes.swflzmaextradata;
 import swfbiganal.swf.tags;
+import swfbiganal.swf.tagtimestat;
 import swfbiganal.util.compiler;
 import swfbiganal.util.explainbytes;
 import swfbiganal.util.urlencode;
@@ -35,6 +36,7 @@ extern(C) int main(int argc, char** argv)
 	const(char)* currentSwfPath;
 	const(char)* charset;
 	int rv;
+	bool doTagTimeStat;
 
 	if (expect(!rt_init(), false))
 	{
@@ -63,6 +65,10 @@ extern(C) int main(int argc, char** argv)
 			if (!strncmp(opt, "-charset=", 9))
 			{
 				charset = opt+9;
+			}
+			else if (!strcmp(opt, "-stat"))
+			{
+				doTagTimeStat = true;
 			}
 			else if (!strcmp(opt, "-tags"))
 			{
@@ -128,7 +134,7 @@ extern(C) int main(int argc, char** argv)
 
 			printFileLine(path, sb.st_size);
 
-			if (expect(!readSwf(fd, charset), false))
+			if (expect(!readSwf(fd, charset, doTagTimeStat), false))
 			{
 				rv = 1;
 			}
@@ -162,6 +168,9 @@ end:
 		fprintf(stderr, "GC total: %s\n", GC.allocatedInCurrentThread().commaize(buf));
 	}}
 
+	if (expect(doTagTimeStat, false))
+		TagTimeStat.printTotals();
+
 	if (expect(!rt_term(), false))
 	{
 		if (!rv)
@@ -175,7 +184,7 @@ endNoRt:
 	return rv;
 }
 
-bool readSwf(int fd, const(char)* defaultCharset)
+bool readSwf(int fd, const(char)* defaultCharset, bool doTagTimeStat)
 {
 	align(16) ubyte[GlobalConfig.ReadBufferSize] buf = void;
 
@@ -185,6 +194,7 @@ bool readSwf(int fd, const(char)* defaultCharset)
 	TagParserState parserState = {
 		reader:         &sr,
 		defaultCharset: defaultCharset,
+		doTagTimeStat:  doTagTimeStat,
 		tagPrintFunc:   &printTagLine,
 	};
 

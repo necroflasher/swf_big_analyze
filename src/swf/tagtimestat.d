@@ -1,16 +1,16 @@
 module swfbiganal.swf.tagtimestat;
 
+import core.stdc.stdio;
+import swfbiganal.util.commaize;
+import swfbiganal.swftypes.swftag;
+
+// SLOW!!!
+import core.memory : GC;
+import core.time : Duration, MonoTime;
+import std.algorithm.sorting : sort;
+
 struct TagTimeStat
 {
-	enum enabled = 0;
-
-static if (enabled):
-	import core.stdc.stdio;
-	import core.memory; // grep: debug feature (static if)
-	import core.time; // grep: debug feature (static if)
-	import swfbiganal.util.commaize;
-	import swfbiganal.swftypes.swftag;
-
 	struct TagCollectedInfo
 	{
 		Duration totalTime;
@@ -40,12 +40,12 @@ static if (enabled):
 
 	static void printTotals()
 	{
-		import std.algorithm.sorting : sort; // grep: debug feature (static if)
 		struct OutputRow
 		{
 			uint tagCode;
 			TagCollectedInfo* info;
 		}
+
 		OutputRow[] rows;
 		foreach (uint tagCode, ref info; allTags)
 		{
@@ -54,6 +54,7 @@ static if (enabled):
 				rows ~= OutputRow(tagCode, &info);
 			}
 		}
+
 		auto sorted = rows.sort!((a, b)
 		{
 			// ORDER BY totalTime DESC, parseCount DESC, tagCode ASC
@@ -62,8 +63,9 @@ static if (enabled):
 			if (a.info.parseCount != b.info.parseCount) return a.info.parseCount > b.info.parseCount;
 			return a.tagCode < b.tagCode;
 		});
-		fprintf(stderr, "     Cnt  Tag                                 Gc  Total       Avg\n");
+
 		ulong totalGcSize;
+		fprintf(stderr, "     Cnt  Tag                                 Gc  Total       Avg\n");
 		foreach (ref row; sorted)
 		{
 			// 23 = longest tag name
@@ -76,13 +78,8 @@ static if (enabled):
 				);
 			totalGcSize += row.info.totalGcSize;
 		}
+
 		char[27] buf = void;
 		fprintf(stderr, "GC total: %s\n", totalGcSize.commaize(buf));
 	}
-}
-
-static if (TagTimeStat.enabled)
-static ~this()
-{
-	TagTimeStat.printTotals();
 }

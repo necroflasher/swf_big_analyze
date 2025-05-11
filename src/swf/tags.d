@@ -26,6 +26,7 @@ struct TagParserState
 {
 	SwfReader*   reader;
 	const(char)* defaultCharset;
+	bool         doTagTimeStat;
 
 	// function for main.d to print a tag
 	// called for tags found inside sprites
@@ -135,11 +136,10 @@ struct TagParserState
 
 void readTag(ref TagParserState parserState, ref SwfTag tag, ref bool gotEndTag)
 {
-	static if (TagTimeStat.enabled)
-	{
-		TagTimeStat ts;
+	TagTimeStat ts;
+
+	if (expect(parserState.doTagTimeStat, false))
 		ts.start();
-	}
 
 	switch (tag.code)
 	{
@@ -274,10 +274,8 @@ void readTag(ref TagParserState parserState, ref SwfTag tag, ref bool gotEndTag)
 		}
 	}
 
-	static if (TagTimeStat.enabled)
-	{
+	if (expect(parserState.doTagTimeStat, false))
 		ts.end(tag.code);
-	}
 }
 
 // -----------------------------------------------------------------------------
