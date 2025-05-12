@@ -5,11 +5,13 @@ import core.stdc.string;
 import swfbiganal.util.compiler;
 
 /**
- * Simplified version of D's Appender.
+ * Like Appender, but uses malloc/free and frees the allocation when the struct
+ * goes out of scope.
  */
-private struct Appender(A : E[], E, M)
-if (__traits(isIntegral, E))
+public struct ScopedAppender(A : E[], E)
 {
+	static assert(__traits(isPOD, E));
+
 	private E*     data;
 	private size_t length;
 	private size_t capacity;
@@ -21,6 +23,14 @@ if (__traits(isIntegral, E))
 		{
 			assert(data != null);
 		}
+	}
+
+	@disable this(this);
+
+	public ~this()
+	{
+		free(data);
+		data = null;
 	}
 
 	public inout(E)[] opSlice() inout
@@ -70,31 +80,10 @@ if (__traits(isIntegral, E))
 	{
 		capacity = (newCapacity|0x3ff)+1;
 
-		data = cast(E*)M.realloc(data, capacity*E.sizeof);
+		data = cast(E*)realloc(data, capacity*E.sizeof);
 
 		if (expect(!data, false))
 			assert(0, "out of memory");
-	}
-}
-
-/**
- * Like Appender, but uses malloc/free and frees the allocation when the struct
- * goes out of scope.
- */
-public struct ScopedAppender(A : E[], E)
-if (__traits(isIntegral, E))
-{
-	private alias M = LibcMemory;
-
-	public Appender!(E[], E, M) ap;
-	public alias ap this; // old syntax for old gdc
-
-	@disable this(this);
-
-	public ~this()
-	{
-		M.free(ap.data);
-		ap.data = null;
 	}
 }
 
@@ -112,16 +101,7 @@ unittest
 	assert(ap[] == "ass");
 
 	assert(__traits(compiles, { ScopedAppender!(int[]) zap; }));
-	assert(!__traits(compiles, { ScopedAppender!(void*[]) zap; }));
 
-	// does not compile
-	//assert(__traits(compiles, { Appender!string zap; }));
-}
-
-private:
-
-struct LibcMemory
-{
-	alias realloc = core.stdc.stdlib.realloc;
-	alias free = core.stdc.stdlib.free;
+	static struct HasDtor { ~this() {} }
+	assert(!__traits(compiles, { ScopedAppender!(HasDtor[]) zap; }));
 }
