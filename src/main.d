@@ -46,10 +46,11 @@ else version(GNU)
 
 extern(C) int main(int argc, char** argv)
 {
+	TagTimeStat tagTimeStat;
 	const(char)* currentSwfPath;
 	const(char)* charset;
 	int rv;
-	bool doTagTimeStat;
+	bool useTagTimeStat;
 	bool hasFiles;
 
 	if (expect(!rt_init(), false))
@@ -82,7 +83,7 @@ extern(C) int main(int argc, char** argv)
 			}
 			else if (!strcmp(opt, "-stat"))
 			{
-				doTagTimeStat = true;
+				useTagTimeStat = true;
 			}
 			else if (!strcmp(opt, "-tags"))
 			{
@@ -138,7 +139,13 @@ extern(C) int main(int argc, char** argv)
 
 			printFileLine(path, sb.st_size);
 
-			if (expect(!readSwf(fd, charset, doTagTimeStat), false))
+			bool swfReadOk = readSwf(
+				fd,
+				charset,
+				useTagTimeStat ? &tagTimeStat : null,
+			);
+
+			if (expect(!swfReadOk, false))
 			{
 				rv = 1;
 			}
@@ -186,8 +193,8 @@ end:
 		fprintf(stderr, "GC total: %s\n", GC.allocatedInCurrentThread().commaize(buf));
 	}}
 
-	if (expect(doTagTimeStat, false))
-		TagTimeStat.printTotals();
+	if (expect(useTagTimeStat, false))
+		tagTimeStat.printTotals();
 
 	if (expect(!rt_term(), false))
 	{
@@ -202,7 +209,7 @@ endNoRt:
 	return rv;
 }
 
-bool readSwf(int fd, const(char)* defaultCharset, bool doTagTimeStat)
+bool readSwf(int fd, const(char)* defaultCharset, TagTimeStat* ts)
 {
 	align(16) ubyte[GlobalConfig.ReadBufferSize] buf = void;
 
@@ -212,7 +219,7 @@ bool readSwf(int fd, const(char)* defaultCharset, bool doTagTimeStat)
 	TagParserState parserState = {
 		reader:         &sr,
 		defaultCharset: defaultCharset,
-		doTagTimeStat:  doTagTimeStat,
+		tagTimeStat:    ts,
 		tagPrintFunc:   &printTagLine,
 	};
 

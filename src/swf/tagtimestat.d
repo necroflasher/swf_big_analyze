@@ -17,8 +17,11 @@ struct TagTimeStat
 		ulong    totalGcSize;
 		size_t   parseCount;
 	}
-	static TagCollectedInfo[SwfTotalPossibleTagCodes] allTags;
 
+	// totals
+	TagCollectedInfo[SwfTotalPossibleTagCodes] allTags;
+
+	// current tag
 	MonoTime startTime;
 	ulong    startGcSize;
 
@@ -38,7 +41,7 @@ struct TagTimeStat
 		info.parseCount += 1;
 	}
 
-	static void printTotals()
+	void printTotals()
 	{
 		struct OutputRow
 		{
