@@ -2,6 +2,7 @@ module swfbiganal.swf.tagtimestat;
 
 import core.stdc.stdlib;
 import core.stdc.stdio;
+import swfbiganal.util.appender;
 import swfbiganal.util.commaize;
 import swfbiganal.swftypes.swftag;
 
@@ -70,7 +71,7 @@ struct TagTimeStat
 
 	void printTotals()
 	{
-		OutputRow[] rows;
+		ScopedAppender!(OutputRow[]) rows;
 
 		foreach (uint tagCode, ref info; allTags)
 		{
@@ -78,7 +79,7 @@ struct TagTimeStat
 				rows ~= OutputRow(tagCode, &info);
 		}
 
-		qsort(rows.ptr, rows.length, OutputRow.sizeof, &TagTimeStat_rowSortFunc);
+		qsort(rows[].ptr, rows[].length, OutputRow.sizeof, &TagTimeStat_rowSortFunc);
 
 		ulong totalGcSize;
 		fprintf(stderr, "     Cnt  Tag                                 Gc  Total       Avg\n");
