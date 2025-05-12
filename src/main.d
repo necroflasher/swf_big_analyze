@@ -24,11 +24,13 @@ private:
 
 extern(C) __gshared string[] rt_options = [
 	"gcopt=cleanup:none",
-	//"gcopt=profile:1",
 
 	"gcopt=minPoolSize:8",
 	"gcopt=maxPoolSize:256",
 	"gcopt=incPoolSize:8",
+
+	// must be last - filtered out by command line
+	"gcopt=profile:1",
 ];
 
 version(DigitalMars)
@@ -52,23 +54,7 @@ extern(C) int main(int argc, char** argv)
 	int rv;
 	bool useTagTimeStat;
 	bool hasFiles;
-
-	if (expect(!rt_init(), false))
-	{
-		rv = 1;
-		goto endNoRt;
-	}
-
-	version(unittest)
-	{{
-		auto result = runModuleUnitTests();
-		rv = (result.passed == result.executed) ? 0 : 1;
-		if (!rv)
-		{
-			printf("%zu modules passed unittests\n", result.passed);
-		}
-		goto end;
-	}}
+	bool useProfileGc;
 
 	for (int i = 1; i < argc; i++)
 	{
@@ -80,6 +66,10 @@ extern(C) int main(int argc, char** argv)
 			if (!strncmp(opt, "-charset=", 9))
 			{
 				charset = opt+9;
+			}
+			else if (!strcmp(opt, "-gc"))
+			{
+				useProfileGc = true;
 			}
 			else if (!strcmp(opt, "-stat"))
 			{
@@ -97,7 +87,7 @@ extern(C) int main(int argc, char** argv)
 			{
 				fprintf(stderr, EXENAME~": unknown option '%s'\n", opt);
 				rv = 1;
-				goto end;
+				goto endNoRt;
 			}
 		}
 		else
@@ -105,6 +95,29 @@ extern(C) int main(int argc, char** argv)
 			continue;
 		}
 	}
+
+	if (!useProfileGc)
+	{
+		// skip the bounds check (yolo)
+		rt_options = rt_options.ptr[0..rt_options.length-1];
+	}
+
+	if (expect(!rt_init(), false))
+	{
+		rv = 1;
+		goto endNoRt;
+	}
+
+	version(unittest)
+	{{
+		auto result = runModuleUnitTests();
+		rv = (result.passed == result.executed) ? 0 : 1;
+		if (!rv)
+		{
+			printf("%zu modules passed unittests\n", result.passed);
+		}
+		goto end;
+	}}
 
 	try
 	{
@@ -175,6 +188,7 @@ extern(C) int main(int argc, char** argv)
 			"usage: "~EXENAME~" [options] <swf files>\n"~
 			"options:\n"~
 			"    -charset=<cs>  decode SWF1-5 text using charset (e.g. CP932)\n"~
+			"    -gc            print gc profile data at exit\n"~
 			"    -stat          print time/space used parsing tags\n"~
 			"    -tags          output a line for every encountered tag\n"~
 			"");
