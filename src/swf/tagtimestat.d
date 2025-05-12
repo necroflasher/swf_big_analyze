@@ -1,13 +1,40 @@
 module swfbiganal.swf.tagtimestat;
 
+import core.stdc.stdlib;
 import core.stdc.stdio;
 import swfbiganal.util.commaize;
 import swfbiganal.swftypes.swftag;
 
-// SLOW!!!
 import core.memory : GC;
-import core.time : Duration, MonoTime;
-import std.algorithm.sorting : sort;
+import core.time : Duration, MonoTime; // SLOW!!!
+
+private struct OutputRow
+{
+	uint tagCode;
+	TagTimeStat.TagCollectedInfo* info;
+}
+
+private int compare(T)(T x, T y)
+{
+	// https://en.wikipedia.org/wiki/Qsort#Example
+	// like "x - y" but without overflowing
+	return (x > y) - (x < y);
+}
+
+extern (C)
+private int TagTimeStat_rowSortFunc(const(void)* aa, const(void)* bb)
+{
+	OutputRow* a = cast(OutputRow*)aa;
+	OutputRow* b = cast(OutputRow*)bb;
+
+	if (a.info.totalTime != b.info.totalTime)
+		return -compare(a.info.totalTime, b.info.totalTime);
+
+	if (a.info.parseCount != b.info.parseCount)
+		return -compare(a.info.parseCount, b.info.parseCount);
+
+	return -compare(a.tagCode, b.tagCode);
+}
 
 struct TagTimeStat
 {
@@ -43,33 +70,19 @@ struct TagTimeStat
 
 	void printTotals()
 	{
-		struct OutputRow
-		{
-			uint tagCode;
-			TagCollectedInfo* info;
-		}
-
 		OutputRow[] rows;
+
 		foreach (uint tagCode, ref info; allTags)
 		{
 			if (info.parseCount > 0)
-			{
 				rows ~= OutputRow(tagCode, &info);
-			}
 		}
 
-		auto sorted = rows.sort!((a, b)
-		{
-			// ORDER BY totalTime DESC, parseCount DESC, tagCode ASC
-			// (comment out to remove that column from the sort)
-			if (a.info.totalTime != b.info.totalTime) return a.info.totalTime > b.info.totalTime;
-			if (a.info.parseCount != b.info.parseCount) return a.info.parseCount > b.info.parseCount;
-			return a.tagCode < b.tagCode;
-		});
+		qsort(rows.ptr, rows.length, OutputRow.sizeof, &TagTimeStat_rowSortFunc);
 
 		ulong totalGcSize;
 		fprintf(stderr, "     Cnt  Tag                                 Gc  Total       Avg\n");
-		foreach (ref row; sorted)
+		foreach (ref row; rows)
 		{
 			// 23 = longest tag name
 			fprintf(stderr, "%8zu  %-23s  %7llu bytes  %.3f msec  avg %.3f msec\n",
