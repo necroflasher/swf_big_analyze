@@ -27,7 +27,11 @@ struct SwfBitReader
 	ulong          totalBits;
 	bool           overflow;
 
-	invariant(!overflow ? (curBit <= totalBits) : (curBit == totalBits));
+	invariant
+	{
+		pragma(inline, true);
+		assert(!overflow ? (curBit <= totalBits) : (curBit == totalBits));
+	}
 
 	this(const(ubyte)[] data_)
 	in (data_.length <= ulong.max/8) // length*8 fits in ulong
@@ -38,7 +42,7 @@ struct SwfBitReader
 
 	bool empty() const
 	{
-		return !(curBit < totalBits);
+		return (curBit == totalBits);
 	}
 
 	ulong bitsLeft() const
@@ -48,9 +52,16 @@ struct SwfBitReader
 
 	void byteAlign()
 	{
-		while (curBit & 0b111)
+		version (LDC)
 		{
-			curBit++;
+			while (curBit & 0b111)
+			{
+				curBit++;
+			}
+		}
+		else
+		{
+			curBit = (curBit + 7) & ~0b111UL;
 		}
 	}
 
@@ -140,17 +151,7 @@ struct SwfBitReader
 
 			const size_t readPos = cast(size_t)(startBit/8);
 
-			version(LDC)
-			{
-				// compiles to a single load
-				uint rv;
-				static foreach_reverse (i; 0..T.sizeof)
-				{
-					rv |= data[readPos+i]<<(i*8);
-				}
-				return rv;
-			}
-			else
+			version(DigitalMars)
 			{
 				union U
 				{
@@ -160,6 +161,16 @@ struct SwfBitReader
 				U u = void;
 				u.b = data[readPos..readPos+T.sizeof];
 				return u.u;
+			}
+			else
+			{
+				// LDC: compiles to a single load
+				uint rv;
+				static foreach_reverse (i; 0..T.sizeof)
+				{
+					rv |= data[readPos+i]<<(i*8);
+				}
+				return rv;
 			}
 		}
 		else

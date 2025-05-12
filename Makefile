@@ -6,7 +6,7 @@ DMDLIBS += -L=-llzma -L=-lxxhash
 LDC     ?= ldc2 --disable-verify --gline-tables-only --link-defaultlib-shared
 LDCLIBS += --L=-llzma --L=-lxxhash
 
-GDC     ?= gdc -g
+GDC     ?= gdc -g -fno-moduleinfo -fno-weak-templates
 GDCLIBS += -llzma -lxxhash
 
 ifeq ($(DEBUG),1)
@@ -52,7 +52,7 @@ watchgdc:
 
 _test_swfbiganal: DMDFLAGS += -unittest
 _test_swfbiganal: LDCFLAGS += --unittest
-_test_swfbiganal: GDCFLAGS += -funittest
+_test_swfbiganal: GDCFLAGS += -funittest -fmoduleinfo
 _test_swfbiganal: $(SRCS)
 #	$(DMD) $(DMDFLAGS) $^ -of=$@ $(DMDLIBS) && size $@
 #	$(LDC) $(LDCFLAGS) $^ --of=$@ $(LDCLIBS) && size $@
