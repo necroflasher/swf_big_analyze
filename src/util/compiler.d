@@ -1,24 +1,25 @@
 module swfbiganal.util.compiler;
 
-// TODO: expect returns int on gdc, fix the dmd one to follow
-
-version(GNU)
+version (GNU)
 {
 	public import gcc.attributes : cold;
 	public import gcc.builtins : expect = __builtin_expect;
+	// type: extern (C) c_long function(c_long, c_long) pure nothrow @nogc @safe
 }
-else version(LDC)
+else version (LDC)
 {
 	public import ldc.attributes : cold;
 	public import ldc.intrinsics : expect = llvm_expect;
+	// https://github.com/ldc-developers/druntime/blob/ldc/src/ldc/intrinsics.di
+	// type: T llvm_expect(T)(T val, T expectedVal) if (__traits(isIntegral, T));
 }
 else
 {
+	import core.stdc.config : c_long;
+
 	struct cold {}
 
-	// https://github.com/ldc-developers/druntime/blob/ldc/src/ldc/intrinsics.di
-	auto ref T expect(T)(auto ref T val, auto ref T expectedVal)
-	if (__traits(isIntegral, T))
+	c_long expect(c_long val, c_long expectedVal) pure nothrow @nogc @safe
 	{
 		pragma(inline, true);
 		return val;
