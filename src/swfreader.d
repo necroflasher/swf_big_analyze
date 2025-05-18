@@ -539,7 +539,24 @@ struct SwfReader
 			if (expect(!decompressor.lzma.initialize(), false))
 				decompressor.null_.initialize();
 
-			put(compressionHeader[].as!SwfLzmaExtraData.toLzmaHeader);
+			// the lzma header contains a field for the expected size of decompressed data.
+			// we can set this, or leave it at -1 which would make it auto-detected based on the stream
+			// let's try setting it and see what happens
+
+			// it is unknown which way gives closer behavior to what flash player does
+			// it doesn't help that it doesn't even use the same library (it uses lzma sdk)
+
+			enum uncompHeadersSize = SwfHeader.sizeof;
+
+			ulong uncompDataSize = swfHeader.fileSize;
+			if (uncompDataSize >= uncompHeadersSize)
+				uncompDataSize -= uncompHeadersSize;
+			else
+				uncompDataSize = 0; // nonsense but just don't underflow it
+
+			put(compressionHeader[]
+				.as!SwfLzmaExtraData
+				.toLzmaHeader(uncompDataSize));
 		}
 
 		if (data.length)
