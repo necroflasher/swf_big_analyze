@@ -556,7 +556,8 @@ struct SwfReader
 
 			put(compressionHeader[]
 				.as!SwfLzmaExtraData
-				.toLzmaHeader(uncompDataSize));
+				.toLzmaHeader(uncompDataSize)
+				.asBytes);
 		}
 
 		if (data.length)
@@ -697,12 +698,44 @@ ubyte[] compress(string data)
 	return std.zlib.compress(cast(ubyte[])data);
 }
 
+version (unittest)
+ubyte[] compress2(string data)
+{
+	import swfbiganal.cdef.lzma;
+
+	lzma_options_lzma lol;
+	if (lzma_lzma_preset(&lol, 0))
+		assert(0);
+
+	lzma_stream ls;
+	if (lzma_alone_encoder(&ls, &lol) != lzma_ret.OK)
+		assert(0);
+
+	ls.next_in = cast(const(ubyte)*)data.ptr;
+	ls.avail_in = data.length;
+	// let's hope it gets smaller!
+	ubyte[] buf = new ubyte[data.length*4];
+	ls.next_out = buf.ptr;
+	ls.avail_out = buf.length;
+
+	lzma_ret rv = lzma_code(&ls, lzma_action.FINISH);
+	if (rv != lzma_ret.STREAM_END)
+		assert(0);
+	assert(!ls.avail_in);
+
+	lzma_end(&ls);
+
+	size_t outlen = (buf.length - ls.avail_out);
+
+	return buf[0..outlen];
+}
+
 // tiny swf, ends normally without an end tag
 unittest
 {
 	auto sr = SwfReader();
 	sr.put("FWS\x01");
-	sr.put(uint(8+1+2+2).asBytes);
+	sr.put(uint(21).asBytes);
 	sr.put("\x00"); // rect
 	sr.put("\x00\x00"); // frameRate
 	sr.put("\x00\x00"); // frameCount
@@ -719,7 +752,7 @@ unittest
 	auto sr = SwfReader();
 	sr.initialize();
 	sr.put("FWS\x01");
-	sr.put(uint((8+1+2+2)+2).asBytes);
+	sr.put(uint(21).asBytes);
 	sr.put("\x00"); // rect
 	sr.put("\xab\xcd"); // frameRate
 	assert(sr.validSwfDataSize == 0);
@@ -751,7 +784,7 @@ unittest
 	auto sr = SwfReader();
 	sr.initialize();
 	sr.put("CWS\x01");
-	sr.put(uint((8+1+2+2)+2).asBytes);
+	sr.put(uint(21).asBytes);
 	sr.put(compress(
 		"\x00"~     // rect
 		"\xab\xcd"~ // frameRate
@@ -776,6 +809,55 @@ unittest
 	assert(sr.getEofJunkData[] == "");
 }
 
+// lzma-compressed swf
+unittest
+{
+	string movie =
+		"\x00"~     // rect
+		"\xab\xcd"~ // frameRate
+		"\x12\x34"~ // frameCount
+		"\x40\x00"~ // ShowFrame
+		"\x40\x00"~ // ShowFrame
+		"\x40\x00"~ // ShowFrame
+		"\x00\x00"~ // End
+		"";
+
+	ubyte[] comp = compress2(movie);
+
+	auto headIn = comp[0..LzmaHeader.sizeof].as!LzmaHeader;
+	comp = comp[LzmaHeader.sizeof..$];
+
+	auto headOut = SwfLzmaExtraData(
+		cast(uint)comp.length,
+		headIn.properties,
+		headIn.dictionarySize);
+
+	auto sr = SwfReader();
+	sr.initialize();
+	sr.put("ZWS\x01");
+	sr.put(uint(8+cast(uint)movie.length).asBytes);
+	sr.put(headOut.asBytes);
+	sr.put(comp);
+	sr.putEndOfInput();
+
+	SwfTag tag;
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 1);
+	assert(!tag.data.length);
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 1);
+	assert(!tag.data.length);
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 1);
+	assert(!tag.data.length);
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 0);
+	assert(!tag.data.length);
+	if (sr.readTag(tag)) assert(0);
+
+	assert(!sr.didWarn);
+}
+
 // empty file with:
 // - swf data past end tag (swf junk)
 // - file data past header size (eof junk)
@@ -784,19 +866,27 @@ unittest
 	auto sr = SwfReader();
 	sr.initialize();
 	sr.put("FWS\x01");
-	sr.put(uint((8+1+2+2)+2+2).asBytes);
+	sr.put(uint(21).asBytes);
 	sr.put("\x00"); // rect
 	sr.put("\x00\x00"); // frameRate
 	sr.put("\x00\x00"); // frameCount
+	sr.put("\x40\x00"); // ShowFrame
+	sr.put("\x40\x00"); // ShowFrame
 	sr.put("\x00\x00"); // End
 	sr.put("\x01\x02"); // swf junk (included in header size)
 	sr.put("\x03\x04"); // eof junk (past header size)
 	sr.putEndOfInput();
 
-	assert(sr.swfData.getReader.data == "\x00\x00\x01\x02");
+	assert(sr.swfData.getReader.data == "\x40\x00\x40\x00\x00\x00\x01\x02");
 	assert(sr.swfData.junkData[] == "\x03\x04");
 
 	SwfTag tag;
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 1);
+	assert(!tag.data.length);
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 1);
+	assert(!tag.data.length);
 	if (!sr.readTag(tag)) assert(0);
 	assert(tag.code == 0);
 	assert(!tag.data.length);
@@ -816,11 +906,13 @@ unittest
 	auto sr = SwfReader();
 	sr.initialize();
 	sr.put("CWS\x01");
-	sr.put(uint((8+1+2+2)+2+2).asBytes);
+	sr.put(uint(21).asBytes);
 	sr.put(compress(
 		"\x00"~     // rect
 		"\xab\xcd"~ // frameRate
 		"\x12\x34"~ // frameCount
+		"\x40\x00"~ // ShowFrame
+		"\x40\x00"~ // ShowFrame
 		"\x00\x00"~ // End
 		"\x01\x02"~ // swf junk (included in header size)
 		"\x03\x04"  // swf junk (included in compressed body but not header size)
@@ -833,10 +925,16 @@ unittest
 	assert(sr.movieHeader.frameRate[1] == 0xcd);
 	assert(sr.movieHeader.frameCount == 0x3412);
 
-	assert(sr.swfData.getReader.data == "\x00\x00\x01\x02");
+	assert(sr.swfData.getReader.data == "\x40\x00\x40\x00\x00\x00\x01\x02");
 	assert(sr.swfData.junkData[] == "\x03\x04");
 
 	SwfTag tag;
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 1);
+	assert(!tag.data.length);
+	if (!sr.readTag(tag)) assert(0);
+	assert(tag.code == 1);
+	assert(!tag.data.length);
 	if (!sr.readTag(tag)) assert(0);
 	assert(tag.code == 0);
 	assert(!tag.data.length);
@@ -853,7 +951,7 @@ unittest
 	auto sr = SwfReader();
 	sr.initialize();
 	sr.put("FWS\x01");
-	sr.put(uint((8+1+2+2)+2+2).asBytes);
+	sr.put(uint(21).asBytes);
 	sr.put("\x00"); // rect
 	sr.put("\xab\xcd"); // frameRate
 	sr.put("\x12\x34"); // frameCount
@@ -873,7 +971,7 @@ unittest
 	auto sr = SwfReader();
 	sr.initialize();
 	sr.put("CWS\x01");
-	sr.put(uint((8+1+2+2)+2+2).asBytes);
+	sr.put(uint(21).asBytes);
 	sr.put(compress(
 		"\x00"~     // rect
 		"\xab\xcd"~ // frameRate

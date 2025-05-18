@@ -72,3 +72,73 @@ extern(C) lzma_ret lzma_code(
 	lzma_action  action);
 
 extern(C) void lzma_end(lzma_stream* strm);
+
+// /usr/include/lzma/lzma12.h
+enum lzma_mode
+{
+	LZMA_MODE_FAST = 1,
+	LZMA_MODE_NORMAL = 2,
+}
+
+// /usr/include/lzma/lzma12.h
+enum lzma_match_finder
+{
+	LZMA_MF_HC3 = 0x03,
+	LZMA_MF_HC4 = 0x04,
+	LZMA_MF_BT2 = 0x12,
+	LZMA_MF_BT3 = 0x13,
+	LZMA_MF_BT4 = 0x14,
+}
+
+// /usr/include/lzma/lzma12.h
+struct lzma_options_lzma
+{
+	uint dict_size;
+	const(ubyte)* preset_dict;
+	uint preset_dict_size;
+	uint lc;
+	uint lp;
+	uint pb;
+	lzma_mode mode = cast(lzma_mode)0; // zero init
+	uint nice_len;
+	lzma_match_finder mf = cast(lzma_match_finder)0; // zero init
+	uint depth;
+	uint ext_flags;
+	uint ext_size_low;
+	uint ext_size_high;
+
+	uint reserved_int4;
+	uint reserved_int5;
+	uint reserved_int6;
+	uint reserved_int7;
+	uint reserved_int8;
+	lzma_reserved_enum reserved_enum1;
+	lzma_reserved_enum reserved_enum2;
+	lzma_reserved_enum reserved_enum3;
+	lzma_reserved_enum reserved_enum4;
+	void* reserved_ptr1;
+	void* reserved_ptr2;
+}
+enum uint LZMA_DICT_SIZE_MIN = 4096;
+enum uint LZMA_DICT_SIZE_DEFAULT = 1<<23;
+enum uint LZMA_LCLP_MIN = 0;
+enum uint LZMA_LCLP_MAX = 4;
+enum uint LZMA_LC_DEFAULT = 3;
+enum uint LZMA_LP_DEFAULT = 0;
+enum uint LZMA_PB_MIN = 0;
+enum uint LZMA_PB_MAX = 4;
+enum uint LZMA_PB_DEFAULT = 2;
+enum uint LZMA_LZMA1EXT_ALLOW_EOPM = 0x01;
+
+// /usr/include/lzma/lzma12.h
+extern(C) lzma_bool lzma_lzma_preset(
+	lzma_options_lzma* options,
+	uint               preset);
+
+// /usr/include/lzma/container.h
+extern(C) lzma_ret lzma_alone_encoder(
+	lzma_stream*              strm,
+	const(lzma_options_lzma)* options);
+
+// /usr/include/lzma/base.h
+alias lzma_bool = ubyte;
