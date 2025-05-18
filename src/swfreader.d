@@ -589,9 +589,27 @@ struct SwfReader
 
 		// https://git.tukaani.org/?p=xz.git;a=blob;f=doc/lzma-file-format.txt;h=4865defd5cf22716d68dbc4621897e6186afffe5;hb=HEAD
 
+		// lc: "the number of literal context bits"
+		// lp: "the number of literal position bits"
+		// pb: "the number of position bits"
+		uint prop = header.properties;
+		uint pb = prop / (9 * 5);
+		prop -= pb * 9 * 5;
+		uint lp = prop / 9;
+		uint lc = prop - lp * 9;
+
 		if (header.properties > (4 * 5 + 4) * 9 + 8)
 		{
 			emitWarning("lzma header error: bad properties field");
+			return;
+		}
+
+		// "XZ Utils has an additional requirement: lc + lp <= 4."
+		// we can't decompress this, while flash player uses the lzma sdk which isn't affected
+		// just reject the file as unsupported
+		if (lc + lp > 4)
+		{
+			emitWarning("lzma header error: unsupported file");
 			return;
 		}
 	}
