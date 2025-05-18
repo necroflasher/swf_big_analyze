@@ -40,14 +40,16 @@ struct SwfHeader
 		if (swfVersion == 0)
 			return "invalid version";
 
-		// smallest valid swf with nothing it in (swf header + movie header)
-		// flash seems to require more but i'm not sure how it works
-		enum minSize = SwfHeader.sizeof+1+2+2;
+		// flash has an arbitrary limit for the minimum size of a valid swf
+		// note that this limit depends on the size in bytes of the display rect
+		// rect size 1-3 -> file size 21
+		// rect size 3+n -> file size 21+n (up to rect=17 with file=35)
+		enum minSize = 21;
 		if (fileSize < minSize)
 			return "filesize too low";
 
 		// flash will say "Movie not loaded"
-		if (fileSize >= 0x8000_0000)
+		if (fileSize > 0x7fff_ffee)
 			return "filesize too high";
 
 		return null;
