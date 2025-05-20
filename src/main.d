@@ -210,12 +210,21 @@ end:
 	if (expect(useTagTimeStat, false))
 		tagTimeStat.printTotals();
 
-	if (expect(!rt_term(), false))
 	{
-		if (!rv)
+		// D runtime prints gc stats to stdout, make it go in stderr instead
+		FILE* tmp;
+		if (expect(useProfileGc, false))
 		{
-			rv = 1;
+			tmp = stdout;
+			stdout = stderr;
 		}
+		if (expect(!rt_term(), false))
+		{
+			if (!rv)
+				rv = 1;
+		}
+		if (expect(useProfileGc, false))
+			stdout = tmp;
 	}
 
 endNoRt:
