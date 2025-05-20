@@ -255,7 +255,7 @@ bool readSwf(int fd, const(char)* defaultCharset, TagTimeStat* ts)
 			}
 			perror("read");
 			printf("# read error (%d)\n", err);
-			return 1;
+			return false;
 		}
 
 		if (expect(readrv != 0, true))
