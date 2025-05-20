@@ -235,6 +235,11 @@ void readTag(ref TagParserState parserState, ref SwfTag tag, ref bool gotEndTag)
 			readImport(parserState, tag);
 			break;
 		}
+		case SwfTagCode.FileAttributes: // 69
+		{
+			readFileAttributes(parserState, tag);
+			break;
+		}
 		case SwfTagCode.DoABCDefine: // 72
 		case SwfTagCode.DoABC:       // 82
 		{
@@ -1254,6 +1259,21 @@ in (
 	}
 
 	br.finish(tag);
+}
+
+// https://www.m2osw.com/swf_tag_fileattributes
+void readFileAttributes(ref TagParserState ps, ref SwfTag tag)
+in (tag.code == SwfTagCode.FileAttributes) // 69
+{
+	auto br = SwfBitReader(tag.data);
+	uint val = br.read!uint;
+
+	if ((val & (1<<3)) && ps.reader.swfHeader.swfVersion < 9)
+	{
+		// in flash player 10.3.183 and newer, this would exit with:
+		// "Warning: Failed to parse corrupt data."
+		tag.print("AS3 in swf version %d", ps.reader.swfHeader.swfVersion);
+	}
 }
 
 // https://www.m2osw.com/swf_tag_doabcdefine
