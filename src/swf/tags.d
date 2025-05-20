@@ -27,6 +27,7 @@ struct TagParserState
 	SwfReader*   reader;
 	const(char)* defaultCharset;
 	TagTimeStat* tagTimeStat;
+	uint         spriteDepth;
 
 	// function for main.d to print a tag
 	// called for tags found inside sprites
@@ -868,6 +869,24 @@ in (tag.code == SwfTagCode.DefineSprite) // 39
 		printf("!begin-sprite\n");
 	}
 
+	if (ps.spriteDepth++)
+	{
+		// 10 of 40k local flashes have this, all with max depth 2
+
+		// 4plebs/1414/46/1414460953093.swf
+		// 4plebs/1437/18/1437182340838.swf
+		// 4plebs/1437/26/1437267041697.swf
+		// 4plebs/1437/34/1437348272663.swf
+		// 4plebs/1437/53/1437531582459.swf
+		// 4plebs/1438/61/1438613296621.swf
+		// 4plebs/1438/63/1438636739169.swf
+		// 4plebs/1438/81/1438813124246.swf
+		// 4plebs/1438/86/1438869006333.swf
+		// 4plebs/1454/52/1454528478630.swf
+
+		tag.print("nested sprite (depth %u)", ps.spriteDepth);
+	}
+
 	auto br = SwfByteReader(tag.data);
 
 	br.skipBits(32); // spriteId, frameCount
@@ -930,6 +949,9 @@ in (tag.code == SwfTagCode.DefineSprite) // 39
 	{
 		tag.print("no end tag");
 	}
+
+	if (!ps.spriteDepth--)
+		assert(0); // underflow
 
 	if (expect(GlobalConfig.OutputTags, false))
 	{
