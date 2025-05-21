@@ -153,12 +153,15 @@ extern(C) int main(int argc, char** argv)
 
 			currentSwfPath = path;
 
+			ulong gcBefore = GC.stats().allocatedInCurrentThread;
+
 			printFileLine(path, sb.st_size);
 
 			bool swfReadOk = readSwf(
 				fd,
 				charset,
 				useTagTimeStat ? &tagTimeStat : null,
+				gcBefore,
 			);
 
 			if (expect(!swfReadOk, false))
@@ -234,7 +237,11 @@ endNoRt:
 	return rv;
 }
 
-bool readSwf(int fd, const(char)* defaultCharset, TagTimeStat* ts)
+bool readSwf(
+	int          fd,
+	const(char)* defaultCharset,
+	TagTimeStat* ts,
+	ulong        gcBefore)
 {
 	align(16) ubyte[GlobalConfig.ReadBufferSize] buf = void;
 
@@ -288,7 +295,7 @@ bool readSwf(int fd, const(char)* defaultCharset, TagTimeStat* ts)
 			// it's fine to quit here, reading tags wouldn't do anything useful
 			if (sr.hasErrors)
 			{
-				printEndOfFile(sr, gotEndTag);
+				printEndOfFile(sr, gotEndTag, gcBefore);
 				break;
 			}
 		}
@@ -311,7 +318,7 @@ bool readSwf(int fd, const(char)* defaultCharset, TagTimeStat* ts)
 		// file just ended?
 		if (!readrv)
 		{
-			printEndOfFile(sr, gotEndTag);
+			printEndOfFile(sr, gotEndTag, gcBefore);
 			break;
 		}
 	}
@@ -467,7 +474,10 @@ void printMovieHeaderLine(ref SwfReader sr)
 		);
 }
 
-void printEndOfFile(ref SwfReader sr, bool gotEndTag)
+void printEndOfFile(
+	ref SwfReader sr,
+	bool          gotEndTag,
+	ulong         gcBefore)
 {
 	if (expect(sr.hasErrors, false))
 	{
@@ -479,89 +489,92 @@ void printEndOfFile(ref SwfReader sr, bool gotEndTag)
 		foreach (e; sr.hardErrors) printf("hard-error %s\n", e.toString);
 	}
 
-	// don't print any of the data stuff below if the file isn't swf
-	if (expect(!sr.swfHeader.isValid, false))
-		return;
-
-	// unused swf data
+	// skip this data stuff if the file isn't swf
+	if (expect(sr.swfHeader.isValid, true))
 	{
-		char[4] type = "swf\0";
-		if (!sr.swfHeader.isCompressed)
-			type = "unc\0";
-		if (gotEndTag)
-			type[2] = 'e';
-
-		const swfJunk = sr.getUnusedSwfData();
-		if (swfJunk.total)
+		// unused swf data
 		{
-			explainBytes(swfJunk.data, (scope exp)
+			char[4] type = "swf\0";
+			if (!sr.swfHeader.isCompressed)
+				type = "unc\0";
+			if (gotEndTag)
+				type[2] = 'e';
+
+			const swfJunk = sr.getUnusedSwfData();
+			if (swfJunk.total)
 			{
-				printf("%s-junk-data %llu %08x %.*s\n",
-					type.ptr,
-					swfJunk.total,
-					swfJunk.crc,
-					cast(int)exp.length, exp.ptr,
-					);
-			});
+				explainBytes(swfJunk.data, (scope exp)
+				{
+					printf("%s-junk-data %llu %08x %.*s\n",
+						type.ptr,
+						swfJunk.total,
+						swfJunk.crc,
+						cast(int)exp.length, exp.ptr,
+						);
+				});
+			}
+		}
+
+		// overflow swf data
+		{
+			const overflowJunk = sr.getOverflowSwfData();
+			if (overflowJunk.total)
+			{
+				explainBytes(overflowJunk.data, (scope exp)
+				{
+					printf("ovf-junk-data %llu %08x %.*s\n",
+						overflowJunk.total,
+						overflowJunk.crc,
+						cast(int)exp.length, exp.ptr,
+						);
+				});
+			}
+		}
+
+		// unused compressed data
+		{
+			const cmpJunk = sr.getCompressedJunkData();
+			if (cmpJunk.total)
+			{
+				explainBytes(cmpJunk.data, (scope exp)
+				{
+					printf("cmp-junk-data %llu %08x %.*s\n",
+						cmpJunk.total,
+						cmpJunk.crc,
+						cast(int)exp.length, exp.ptr,
+						);
+				});
+			}
+		}
+
+		// data after compressed body
+		{
+			const eofJunk = sr.getEofJunkData();
+			if (eofJunk.total)
+			{
+				explainBytes(eofJunk.data, (scope exp)
+				{
+					printf("eof-junk-data %llu %08x %.*s\n",
+						eofJunk.total,
+						eofJunk.crc,
+						cast(int)exp.length, exp.ptr,
+						);
+				});
+			}
+		}
+
+		// print swfData if we successfully parsed any of it
+		if (sr.validSwfDataSize)
+		{
+			printf("swf-data-total %llu %08x\n",
+				sr.validSwfDataSize,
+				sr.validSwfDataCrc,
+				);
 		}
 	}
 
-	// overflow swf data
-	{
-		const overflowJunk = sr.getOverflowSwfData();
-		if (overflowJunk.total)
-		{
-			explainBytes(overflowJunk.data, (scope exp)
-			{
-				printf("ovf-junk-data %llu %08x %.*s\n",
-					overflowJunk.total,
-					overflowJunk.crc,
-					cast(int)exp.length, exp.ptr,
-					);
-			});
-		}
-	}
-
-	// unused compressed data
-	{
-		const cmpJunk = sr.getCompressedJunkData();
-		if (cmpJunk.total)
-		{
-			explainBytes(cmpJunk.data, (scope exp)
-			{
-				printf("cmp-junk-data %llu %08x %.*s\n",
-					cmpJunk.total,
-					cmpJunk.crc,
-					cast(int)exp.length, exp.ptr,
-					);
-			});
-		}
-	}
-
-	// data after compressed body
-	{
-		const eofJunk = sr.getEofJunkData();
-		if (eofJunk.total)
-		{
-			explainBytes(eofJunk.data, (scope exp)
-			{
-				printf("eof-junk-data %llu %08x %.*s\n",
-					eofJunk.total,
-					eofJunk.crc,
-					cast(int)exp.length, exp.ptr,
-					);
-			});
-		}
-	}
-
-	// print swfData if we successfully parsed any of it
-	if (sr.validSwfDataSize)
-	{
-		printf("swf-data-total %llu %08x\n",
-			sr.validSwfDataSize,
-			sr.validSwfDataCrc,
-			);
-	}
+	ulong gcNow = GC.stats().allocatedInCurrentThread;
+	printf("gc-total %llu\n", gcNow-gcBefore);
 }
 
 // helper for formatting tag output with hihg performance
