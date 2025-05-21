@@ -1,13 +1,12 @@
-SRCS = src/*.d src/*/*.d
+swfbiganal_SRCS = \
+	$(shell find src/ -name '*.d' -not -path 'src/bin/*.d') \
+	src/bin/swfbiganal.d \
 
-DMD     ?= dmd -defaultlib=libphobos2.so -g -L=-fuse-ld=lld
-DMDLIBS += -L=-llzma -L=-lxxhash
+swfbiganal_LIBS = -llzma -lxxhash
 
-LDC     ?= ldc2 --disable-verify --gline-tables-only --link-defaultlib-shared
-LDCLIBS += --L=-llzma --L=-lxxhash
-
-GDC     ?= gdc -g -fno-moduleinfo -fno-weak-templates
-GDCLIBS += -llzma -lxxhash
+DMD ?= dmd -defaultlib=libphobos2.so -g -L=-fuse-ld=lld
+LDC ?= ldc2 --disable-verify --gline-tables-only --link-defaultlib-shared
+GDC ?= gdc -g -fno-moduleinfo -fno-weak-templates
 
 ifeq ($(DEBUG),1)
 DMDFLAGS += -debug
@@ -33,30 +32,30 @@ ifeq ($(MAKELEVEL),1)
 .PHONY: swfbiganal3
 endif
 
-swfbiganal: $(SRCS)
-	$(DMD) $(DMDFLAGS) $^ -of=$@ $(DMDLIBS) && size $@
+swfbiganal: $(swfbiganal_SRCS)
+	$(DMD) $(DMDFLAGS) $^ -of=$@ $(addprefix -L=,$(swfbiganal_LIBS)) && size $@
 
-swfbiganal2: $(SRCS)
-	$(LDC) $(LDCFLAGS) $^ --of=$@ $(LDCLIBS) && size $@
+swfbiganal2: $(swfbiganal_SRCS)
+	$(LDC) $(LDCFLAGS) $^ --of=$@ $(addprefix --L=,$(swfbiganal_LIBS)) && size $@
 
-swfbiganal3: $(SRCS)
-	$(GDC) $(GDCFLAGS) $^ -o $@ $(GDCLIBS) && size $@
+swfbiganal3: $(swfbiganal_SRCS)
+	$(GDC) $(GDCFLAGS) $^ -o $@ $(swfbiganal_LIBS) && size $@
 
 .PHONY: watch watchldc watchgdc
 watch:
-	ls $(SRCS) | entr -cs 'make -s'
+	ls $(swfbiganal_SRCS) | entr -cs 'make -s'
 watchldc:
-	ls $(SRCS) | entr -cs 'make -s swfbiganal2'
+	ls $(swfbiganal_SRCS) | entr -cs 'make -s swfbiganal2'
 watchgdc:
-	ls $(SRCS) | entr -cs 'make -s swfbiganal3'
+	ls $(swfbiganal_SRCS) | entr -cs 'make -s swfbiganal3'
 
 _test_swfbiganal: DMDFLAGS += -unittest
 _test_swfbiganal: LDCFLAGS += --unittest
 _test_swfbiganal: GDCFLAGS += -funittest -fmoduleinfo
-_test_swfbiganal: $(SRCS)
-#	$(DMD) $(DMDFLAGS) $^ -of=$@ $(DMDLIBS) && size $@
-#	$(LDC) $(LDCFLAGS) $^ --of=$@ $(LDCLIBS) && size $@
-	$(GDC) $(GDCFLAGS) $^ -o $@ $(GDCLIBS) && size $@
+_test_swfbiganal: $(swfbiganal_SRCS)
+#	$(DMD) $(DMDFLAGS) $^ -of=$@ $(addprefix -L=,$(swfbiganal_LIBS)) && size $@
+#	$(LDC) $(LDCFLAGS) $^ --of=$@ $(addprefix --L=,$(swfbiganal_LIBS)) && size $@
+	$(GDC) $(GDCFLAGS) $^ -o $@ $(swfbiganal_LIBS) && size $@
 
 .PHONY: test
 test: _test_swfbiganal
@@ -64,7 +63,7 @@ test: _test_swfbiganal
 
 .PHONY: watchtest
 watchtest:
-	ls $(SRCS) | entr -cs 'make -s test'
+	ls $(swfbiganal_SRCS) | entr -cs 'make -s test'
 
 .PHONY: todo
 todo:
