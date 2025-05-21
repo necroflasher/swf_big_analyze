@@ -208,15 +208,17 @@ struct SwfReader
 		// tags+rect >= 9 bytes
 		// tag data here includes overflowing/unused data, limited by header size
 
-		if (tagStreamSize < 6 || totalMovieData < 9)
-		{
-			//~ printf("movieTooShort: tagStreamSize=%zu totalMovieData=%zu\n",
-				//~ tagStreamSize,
-				//~ totalMovieData);
+		//~ printf("HAVE: rect=%llu\n", displayRectSize);
+		//~ printf("HAVE: tags=%llu\n", tagStreamSize);
+		//~ printf("      (of which %llu parsed)\n", swfData.swfDataValidTotal-movieHeaderSize);
+		//~ printf("      (of which %llu past-end)\n", swfData.unusedSwfData.total);
+		//~ printf("      (of which %llu overflowed)\n", swfData.overflowSwfData.total);
 
-			//~ printf("swfDataValidTotal=%llu\n", swfData.swfDataValidTotal);
-			//~ printf("unusedSwfData=%llu\n", swfData.unusedSwfData.total);
-			//~ printf("overflowSwfData=%llu\n", swfData.overflowSwfData.total);
+		if (tagStreamSize < 6 || tagStreamSize+displayRectSize < 9)
+		{
+			//~ printf("CHECK: tags=%zu < 6 OR tags+rect=%zu < 9\n",
+				//~ tagStreamSize,
+				//~ tagStreamSize+displayRectSize);
 
 			softErrors.add(SwfSoftError.movieTooShort);
 		}
