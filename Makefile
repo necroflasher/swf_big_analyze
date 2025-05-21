@@ -25,6 +25,15 @@ LDCFLAGS += --release --boundscheck=off --checkaction=halt
 GDCFLAGS += -frelease -fbounds-check=off -fcheckaction=halt
 endif
 
+ifneq ($(M),)
+DMDFLAGS += -m$(M)
+LDCFLAGS += -m$(M)
+GDCFLAGS += -m$(M)
+ifeq ($(M),32)
+DMDFLAGS += -fPIC
+endif
+endif
+
 # always recompile in "make watch"
 ifeq ($(MAKELEVEL),1)
 .PHONY: swfbiganal
