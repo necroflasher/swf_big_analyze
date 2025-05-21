@@ -16,7 +16,7 @@ endif
 ifeq ($(OPT),1)
 DMDFLAGS += -O -inline -mcpu=native
 LDCFLAGS += -O3 -flto=full -mcpu=native --fvisibility=hidden -fno-exceptions
-GDCFLAGS += -O2 -flto=auto -march=native -fvisibility=hidden -fno-exceptions
+GDCFLAGS += -O3 -flto=auto -march=native -fvisibility=hidden -fno-exceptions
 endif
 ifeq ($(RELEASE),1)
 # don't recommend even though i haven't seen a violation in ages
