@@ -50,16 +50,22 @@ watchgdc:
 	ls $(swfbiganal_SRCS) | entr -cs 'make -s swfbiganal3'
 
 _test_swfbiganal: DMDFLAGS += -unittest
-_test_swfbiganal: LDCFLAGS += --unittest
-_test_swfbiganal: GDCFLAGS += -funittest -fmoduleinfo
 _test_swfbiganal: $(swfbiganal_SRCS)
-#	$(DMD) $(DMDFLAGS) $^ -of=$@ $(addprefix -L=,$(swfbiganal_LIBS)) && size $@
-#	$(LDC) $(LDCFLAGS) $^ --of=$@ $(addprefix --L=,$(swfbiganal_LIBS)) && size $@
+	$(DMD) $(DMDFLAGS) $^ -of=$@ $(addprefix -L=,$(swfbiganal_LIBS)) && size $@
+_test_swfbiganal2: LDCFLAGS += --unittest
+_test_swfbiganal2: $(swfbiganal_SRCS)
+	$(LDC) $(LDCFLAGS) $^ --of=$@ $(addprefix --L=,$(swfbiganal_LIBS)) && size $@
+_test_swfbiganal3: GDCFLAGS += -funittest -fmoduleinfo
+_test_swfbiganal3: $(swfbiganal_SRCS)
 	$(GDC) $(GDCFLAGS) $^ -o $@ $(swfbiganal_LIBS) && size $@
 
-.PHONY: test
+.PHONY: test test2 test3
 test: _test_swfbiganal
 	./_test_swfbiganal
+test2: _test_swfbiganal2
+	./_test_swfbiganal2
+test3: _test_swfbiganal3
+	./_test_swfbiganal3
 
 .PHONY: watchtest
 watchtest:
