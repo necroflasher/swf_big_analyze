@@ -1,4 +1,4 @@
-module swfbiganal.main;
+module swfbiganal.bin.swfbiganal;
 
 import core.stdc.errno;
 import core.stdc.stdio;
