@@ -98,6 +98,14 @@ public struct SwfDataAppender
 	}
 
 	/**
+	 * true if reading ended for any reason
+	 */
+	public bool isEnded() const
+	{
+		return readState != ReadState.reading;
+	}
+
+	/**
 	 * get a SwfBitReader for parsing the currently buffered data
 	 * 
 	 * note that using the reader doesn't automatically advance the position of
@@ -136,14 +144,13 @@ public struct SwfDataAppender
 	in (!isInitialized)
 	out (; isInitialized)
 	{
-		// checks duplicated from swftypes.d
-		// it doesn't matter but try to sensibly handle broken files here
-		// use the header size if it looks valid, otherwise max out the limit
-		enum minSwfData = 1+2+2;
-		if (swfHeader.fileSize >= SwfHeader.sizeof+minSwfData && swfHeader.fileSize < 0x8000_0000)
-			swfDataLimit = (swfHeader.fileSize - SwfHeader.sizeof);
+		// this needs a non-zero limit because isInitialized() uses it
+		// a file like this is necessarily going to fail to parse anyway
+		// it would be nice to actually set it to zero here, TODO
+		if (swfHeader.fileSize < SwfHeader.sizeof)
+			swfDataLimit = 1;
 		else
-			swfDataLimit = (int.max - SwfHeader.sizeof); // highest normally accepted value
+			swfDataLimit = (swfHeader.fileSize - SwfHeader.sizeof);
 	}
 
 	/**

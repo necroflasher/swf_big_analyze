@@ -8,6 +8,7 @@ import swfbiganal.appenders.junkappender;
 import swfbiganal.appenders.limitappender;
 import swfbiganal.appenders.swfdataappender;
 import swfbiganal.cdef.lzma;
+import swfbiganal.swf.errors;
 import swfbiganal.swfbitreader;
 import swfbiganal.swftypes.swfheader;
 import swfbiganal.swftypes.swfmovieheader;
@@ -17,6 +18,7 @@ import swfbiganal.swftypes.swfrect;
 import swfbiganal.util.compiler;
 import swfbiganal.util.datacrc;
 import swfbiganal.util.decompressor;
+import swfbiganal.util.enumset;
 import swfbiganal.util.explainbytes;
 
 // 32bit
@@ -38,10 +40,10 @@ struct SwfReader
 	}
 
 	public State              state;
-	public bool               didWarn; /// emitWarning() was called
 
 	public SwfHeader          swfHeader;
 	public SwfMovieHeader     movieHeader;
+	private size_t            movieHeaderSize;
 	public LimitAppender2!13  compressionHeader = {limit: 13};
 
 	private LimitAppender2!13 fileData;   /// temporary for holding header data
@@ -52,6 +54,14 @@ struct SwfReader
 	private JunkAppender      decompressorUnusedData;  /// extra data past zlib/lzma body
 
 	private SwfDataAppender   swfData;
+
+	public EnumSet!SwfSoftError softErrors;
+	public EnumSet!SwfHardError hardErrors;
+
+	public bool hasErrors()
+	{
+		return !softErrors.isEmpty || !hardErrors.isEmpty;
+	}
 
 	public void initialize()
 	{
@@ -132,20 +142,19 @@ struct SwfReader
 		{
 			case State.readSwfHeader:
 			{
-				// skip this if we already printed "bad swf header"
-				if (!(didWarn && !swfHeader.isValid))
-				{
-					emitWarning("swf header incomplete");
-				}
+				softErrors.add(SwfSoftError.movieTooShort);
+				emitWarning("swf header incomplete");
 				break;
 			}
 			case State.readCompressionHeader:
 			{
+				softErrors.add(SwfSoftError.movieTooShort);
 				emitWarning("compression header incomplete");
 				break;
 			}
 			case State.readMovieHeader:
 			{
+				softErrors.add(SwfSoftError.movieTooShort);
 				emitWarning("movie header incomplete");
 				break;
 			}
@@ -153,11 +162,13 @@ struct SwfReader
 			{
 				// tag reading in progress
 				// the next readTag will see endOfInput and update the state
+				// movieTooShort: will be set through readTag
 				break;
 			}
 			case State.finished:
 			{
-				// ok, already finished reading tags
+				// reached end of tag stream, no more parsing
+				// movieTooShort: already set through readTag
 				break;
 			}
 		}
@@ -170,6 +181,58 @@ struct SwfReader
 		{
 			emitWarning("unexpected end of compressed body");
 		}
+	}
+
+	/**
+	 * called by readTag when we're done reading tags [after setting swfData to
+	 *  finished, before updating state]
+	 */
+	private void onSwfDataFinished()
+	in (
+		state == State.readTagData &&
+		swfData.isEnded)
+	{
+		// total movie data (including overflowed tags and tags past end)
+		size_t totalMovieData = swfData.swfDataValidTotal;
+		totalMovieData += swfData.unusedSwfData.total;
+		totalMovieData += swfData.overflowSwfData.total;
+
+		assert(movieHeaderSize >= 5); // smallest valid, should have it here
+		size_t displayRectSize = movieHeaderSize-4;
+
+		assert(totalMovieData >= movieHeaderSize);
+		size_t tagStreamSize = totalMovieData - movieHeaderSize;
+
+		// based on testing, flash player's limits for a minimal swf seem to be:
+		// tag data >= 6 bytes
+		// tags+rect >= 9 bytes
+		// tag data here includes overflowing/unused data, limited by header size
+
+		if (tagStreamSize < 6 || totalMovieData < 9)
+		{
+			//~ printf("movieTooShort: tagStreamSize=%zu totalMovieData=%zu\n",
+				//~ tagStreamSize,
+				//~ totalMovieData);
+
+			//~ printf("swfDataValidTotal=%llu\n", swfData.swfDataValidTotal);
+			//~ printf("unusedSwfData=%llu\n", swfData.unusedSwfData.total);
+			//~ printf("overflowSwfData=%llu\n", swfData.overflowSwfData.total);
+
+			softErrors.add(SwfSoftError.movieTooShort);
+		}
+	}
+
+	/**
+	 * for unittest purposes (to get the errors set), parses all the remaining
+	 *  tags in the file
+	 * 
+	 * this should be done before checking hasErrors if no tags are read
+	 */
+	private void skipRemainingTags()
+	{
+		SwfTag tag;
+		while (readTag(tag))
+			continue;
 	}
 
 	/**
@@ -201,6 +264,7 @@ struct SwfReader
 		if (!br.totalBits && endOfInput)
 		{
 			swfData.setSwfReadFinished();
+			onSwfDataFinished();
 			state = State.finished;
 			return false;
 		}
@@ -266,6 +330,7 @@ struct SwfReader
 				}
 
 				swfData.setSwfReadFinishedWithOverflow();
+				onSwfDataFinished();
 				state = State.finished;
 				return false;
 			}
@@ -282,13 +347,23 @@ struct SwfReader
 				ulong tagDataEnd = swfData.swfReadOffset + tagHeaderSize + length;
 				if (expect(tagDataEnd > swfHeader.fileSize, false))
 				{
-					emitWarning("tag data would overflow file: %llu > %u (extra: %llu)",
-						tagDataEnd,
-						swfHeader.fileSize,
-						tagDataEnd - swfHeader.fileSize,
-						);
+					if (tagDataEnd > 0x7fff_ffff)
+					{
+						hardErrors.add(SwfHardError.tagEndOverflow);
+						emitWarning("tag end overflows int.max: %llu > %u",
+							tagDataEnd,
+							int.max,
+							);
+					}
+					else
+						emitWarning("tag data would overflow file: %llu > %u (extra: %llu)",
+							tagDataEnd,
+							swfHeader.fileSize,
+							tagDataEnd - swfHeader.fileSize,
+							);
 
 					swfData.setSwfReadFinishedWithOverflow();
+					onSwfDataFinished();
 					// call recursively once to check the end condition
 					return readTag(tagOut);
 				}
@@ -322,6 +397,7 @@ struct SwfReader
 		if (expect(code == 0, false))
 		{
 			swfData.setSwfReadFinished();
+			onSwfDataFinished();
 			state = State.finished;
 		}
 
@@ -414,7 +490,6 @@ struct SwfReader
 	private void emitWarning(string msg)
 	{
 		pragma(inline, false);
-		didWarn = true;
 		printf("# %.*s\n", cast(int)msg.length, msg.ptr);
 	}
 
@@ -424,7 +499,6 @@ struct SwfReader
 	private void emitWarning(scope const(char)* fmt, scope ...)
 	{
 		pragma(inline, false);
-		didWarn = true;
 		va_list ap;
 		va_start(ap, fmt);
 		printf("# ");
@@ -451,7 +525,7 @@ struct SwfReader
 		swfHeader = fileData[].as!SwfHeader;
 		fileData.reset();
 
-		const(char)* invalidReason = swfHeader.validate;
+		const(char)* invalidReason = swfHeader.validate(&softErrors);
 		if (invalidReason)
 		{
 			explainBytes(swfHeader.asBytes, 8, (scope exp)
@@ -681,7 +755,8 @@ struct SwfReader
 			movieHeader = SwfMovieHeader(br);
 			if (!br.overflow)
 			{
-				swfData.advanceBy(bitsToBytes(br.curBit));
+				movieHeaderSize = bitsToBytes(br.curBit);
+				swfData.advanceBy(movieHeaderSize);
 				// ok, ready to read tags now
 				state = State.readTagData;
 			}
@@ -740,10 +815,12 @@ unittest
 	sr.put("\x00\x00"); // frameRate
 	sr.put("\x00\x00"); // frameCount
 	sr.putEndOfInput();
-	assert(!sr.didWarn);
 
 	SwfTag tag;
 	if (sr.readTag(tag)) assert(0);
+
+	assert(sr.hasErrors);
+	assert(sr.softErrors.has(SwfSoftError.movieTooShort));
 }
 
 // normal uncompressed swf
@@ -760,7 +837,7 @@ unittest
 	assert(sr.validSwfDataSize == 5);
 	sr.put("\x00\x00"); // End
 	sr.putEndOfInput();
-	assert(!sr.didWarn);
+	assert(!sr.hasErrors);
 
 	assert(sr.movieHeader.frameRate[0] == 0xab);
 	assert(sr.movieHeader.frameRate[1] == 0xcd);
@@ -776,6 +853,9 @@ unittest
 
 	assert(sr.getUnusedSwfData[] == "");
 	assert(sr.getEofJunkData[] == "");
+
+	assert(sr.hasErrors);
+	assert(sr.softErrors.has(SwfSoftError.movieTooShort));
 }
 
 // normal compressed swf
@@ -792,7 +872,7 @@ unittest
 		"\x00\x00"  // End
 	));
 	sr.putEndOfInput();
-	assert(!sr.didWarn);
+	assert(!sr.hasErrors);
 
 	assert(sr.movieHeader.frameRate[0] == 0xab);
 	assert(sr.movieHeader.frameRate[1] == 0xcd);
@@ -807,6 +887,9 @@ unittest
 	assert(sr.getUnusedSwfData[] == "");
 	assert(sr.getCompressedJunkData[] == "");
 	assert(sr.getEofJunkData[] == "");
+
+	assert(sr.hasErrors);
+	assert(sr.softErrors.has(SwfSoftError.movieTooShort));
 }
 
 // lzma-compressed swf
@@ -839,6 +922,7 @@ unittest
 	sr.put(headOut.asBytes);
 	sr.put(comp);
 	sr.putEndOfInput();
+	assert(!sr.hasErrors);
 
 	SwfTag tag;
 	if (!sr.readTag(tag)) assert(0);
@@ -855,7 +939,7 @@ unittest
 	assert(!tag.data.length);
 	if (sr.readTag(tag)) assert(0);
 
-	assert(!sr.didWarn);
+	assert(!sr.hasErrors);
 }
 
 // empty file with:
@@ -895,6 +979,8 @@ unittest
 	assert(sr.getUnusedSwfData[] == "\x01\x02");
 	assert(sr.getCompressedJunkData[] == "");
 	assert(sr.getEofJunkData[] == "\x03\x04");
+
+	assert(!sr.hasErrors);
 }
 
 // compressed swf with
@@ -919,7 +1005,7 @@ unittest
 	));
 	sr.put("\x05\x06"); // eof junk
 	sr.putEndOfInput();
-	assert(!sr.didWarn);
+	assert(!sr.hasErrors);
 
 	assert(sr.movieHeader.frameRate[0] == 0xab);
 	assert(sr.movieHeader.frameRate[1] == 0xcd);
@@ -943,6 +1029,8 @@ unittest
 	assert(sr.getUnusedSwfData[] == "\x01\x02");
 	assert(sr.getCompressedJunkData[] == "\x03\x04");
 	assert(sr.getEofJunkData[] == "\x05\x06");
+
+	assert(!sr.hasErrors);
 }
 
 // fileOffset (uncompressed)
@@ -956,13 +1044,17 @@ unittest
 	sr.put("\xab\xcd"); // frameRate
 	sr.put("\x12\x34"); // frameCount
 	sr.put("\x40\x00"); // ShowFrame
+	sr.put("\x40\x00"); // ShowFrame
 	sr.put("\x00\x00"); // End
 	sr.putEndOfInput();
 
 	SwfTag tag;
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 13);
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 15);
+	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 17);
 	if (sr.readTag(tag)) assert(0);
+
+	assert(!sr.hasErrors);
 }
 
 // fileOffset (compressed)
@@ -977,6 +1069,7 @@ unittest
 		"\xab\xcd"~ // frameRate
 		"\x12\x34"~ // frameCount
 		"\x40\x00"~ // ShowFrame
+		"\x40\x00"~ // ShowFrame
 		"\x00\x00"  // End
 	));
 	sr.putEndOfInput();
@@ -984,7 +1077,10 @@ unittest
 	SwfTag tag;
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 13);
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 15);
+	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 17);
 	if (sr.readTag(tag)) assert(0);
+
+	assert(!sr.hasErrors);
 }
 
 /**

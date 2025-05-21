@@ -12,6 +12,7 @@ import swfbiganal.swftypes.swfcolortransform;
 import swfbiganal.swftypes.swfanyfilter;
 import swfbiganal.swftypes.swfheader;
 import swfbiganal.swftypes.swfrgb;
+import swfbiganal.swf.errors;
 import swfbiganal.swf.fontglyphs;
 import swfbiganal.swf.strings;
 import swfbiganal.swf.textbuilder;
@@ -1294,6 +1295,7 @@ in (tag.code == SwfTagCode.FileAttributes) // 69
 	{
 		// in flash player 10.3.183 and newer, this would exit with:
 		// "Warning: Failed to parse corrupt data."
+		ps.reader.hardErrors.add(SwfHardError.as3InOldFlash);
 		tag.print("AS3 in swf version %d", ps.reader.swfHeader.swfVersion);
 	}
 }

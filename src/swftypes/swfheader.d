@@ -1,30 +1,27 @@
 module swfbiganal.swftypes.swfheader;
 
-import swfbiganal.globals;
+import swfbiganal.swf.errors;
+import swfbiganal.util.enumset;
 
 struct SwfHeader
 {
 	ubyte[3] signature;
-
-	/** valid 1-255 */
-	ubyte swfVersion;
-
-	/**
-	 * Size of the uncompressed SWF header + movie header + tag stream.
-	 * 
-	 * Flash Player also uses this as a size limit for reading the file.
-	 */
-	uint fileSize;
+	ubyte    swfVersion;
+	uint     fileSize;
 
 	bool isValid() const
 	{
 		return !validate;
 	}
 
-	const(char)* validate() const
+	const(char)* validate(EnumSet!SwfSoftError* se = null) const
 	{
 		if (signature[1..$] != "WS")
+		{
+			if (se)
+				se.add(SwfSoftError.badHeader);
 			return "wrong signature";
+		}
 
 		switch (signature[0])
 		{
@@ -33,12 +30,18 @@ struct SwfHeader
 			case 'Z':
 				break;
 			default:
+				if (se)
+					se.add(SwfSoftError.badHeader);
 				return "wrong signature or unknown compression method";
 		}
 
 		// flash will say "Movie not loaded"
 		if (swfVersion == 0)
+		{
+			if (se)
+				se.add(SwfSoftError.badHeader);
 			return "invalid version";
+		}
 
 		// flash has an arbitrary limit for the minimum size of a valid swf
 		// note that this limit depends on the size in bytes of the display rect
@@ -46,11 +49,19 @@ struct SwfHeader
 		// rect size 3+n -> file size 21+n (up to rect=17 with file=35)
 		enum minSize = 21;
 		if (fileSize < minSize)
+		{
+			if (se)
+				se.add(SwfSoftError.headerSizeLow);
 			return "filesize too low";
+		}
 
 		// flash will say "Movie not loaded"
 		if (fileSize > 0x7fff_ffee)
+		{
+			if (se)
+				se.add(SwfSoftError.headerSizeHigh);
 			return "filesize too high";
+		}
 
 		return null;
 	}

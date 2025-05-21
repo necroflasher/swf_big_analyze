@@ -12,6 +12,7 @@ import swfbiganal.swfreader;
 import swfbiganal.swftypes.swftag;
 import swfbiganal.swftypes.swfheader;
 import swfbiganal.swftypes.swflzmaextradata;
+import swfbiganal.swf.errors;
 import swfbiganal.swf.tags;
 import swfbiganal.swf.tagtimestat;
 import swfbiganal.util.compiler;
@@ -263,8 +264,8 @@ bool readSwf(int fd, const(char)* defaultCharset, TagTimeStat* ts)
 				continue;
 			}
 			perror("read");
-			printf("# read error (%d)\n", err);
-			return false;
+			// make some noise
+			assert(0);
 		}
 
 		if (expect(readrv != 0, true))
@@ -278,13 +279,17 @@ bool readSwf(int fd, const(char)* defaultCharset, TagTimeStat* ts)
 		{
 			if (prevState < SwfReader.State.readTagData)
 			{
-				if (!checkPrintHeaderLines(sr, prevState, totalBytesRead))
-				{
-					// bad header
-					break;
-				}
+				printHeaderLines(sr, prevState, totalBytesRead);
 			}
 			prevState = sr.state;
+
+			// bad header
+			// it's fine to quit here, reading tags wouldn't do anything useful
+			if (sr.hasErrors)
+			{
+				printEndOfFile(sr, gotEndTag);
+				break;
+			}
 		}
 
 		if (!readrv)
@@ -310,13 +315,16 @@ bool readSwf(int fd, const(char)* defaultCharset, TagTimeStat* ts)
 		}
 	}
 
-	if (sr.didWarn)
+	if (sr.hasErrors)
 		return false;
 
 	return true;
 }
 
-bool checkPrintHeaderLines(ref SwfReader sr, SwfReader.State prevState, ulong totalBytesRead)
+void printHeaderLines(
+	ref SwfReader   sr,
+	SwfReader.State prevState,
+	ulong           totalBytesRead)
 {
 	if (
 		prevState <= SwfReader.State.readSwfHeader &&
@@ -330,7 +338,7 @@ bool checkPrintHeaderLines(ref SwfReader sr, SwfReader.State prevState, ulong to
 		// exit here if the swf header isn't valid
 		if (!sr.swfHeader.isValid)
 		{
-			return false;
+			return;
 		}
 	}
 
@@ -350,8 +358,6 @@ bool checkPrintHeaderLines(ref SwfReader sr, SwfReader.State prevState, ulong to
 	{
 		printMovieHeaderLine(sr);
 	}
-
-	return true;
 }
 
 void printTagLine(ref const(SwfTag) tag)
@@ -462,6 +468,20 @@ void printMovieHeaderLine(ref SwfReader sr)
 
 void printEndOfFile(ref SwfReader sr, bool gotEndTag)
 {
+	if (expect(sr.hasErrors, false))
+	{
+		printf("errors %zu %zu\n",
+			sr.softErrors.count,
+			sr.hardErrors.count);
+
+		foreach (e; sr.softErrors) printf("soft-error %s\n", e.toString);
+		foreach (e; sr.hardErrors) printf("hard-error %s\n", e.toString);
+	}
+
+	// don't print any of the data stuff below if the file isn't swf
+	if (expect(!sr.swfHeader.isValid, false))
+		return;
+
 	// unused swf data
 	{
 		char[4] type = "swf\0";
