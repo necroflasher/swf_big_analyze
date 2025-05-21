@@ -6,40 +6,26 @@ import swfbiganal.appenders.rollingappender;
 import swfbiganal.swfbitreader;
 import swfbiganal.swftypes.swfheader;
 
-/**
- * do-it-all appender for swf data
- * 
- * - the amount put in the swfData buffer is limited by the size in the swf
- *    header (matches how flash player reads flashes)
- * - data beyond that is put in the junkData buffer, whose size is capped by its .limit
- * - crc and sizes are calculated for you
- * - hands out SwfBitReader instances and keeps the read position for them
- * - etc etc
- */
-
-/**
- * An Appender-like buffer for reading a SWF file after decompression.
- * 
- * After the SWF header has been read and decompression possibly started, this
- * should be called with the movie header and the following tag stream data.
- */
 public struct SwfDataAppender
 {
-	private enum ReadState
+	private enum State
 	{
-		/// initial state
-		reading,
+		// waiting for initialize() to be called with the swf header
+		readHeader,
 
-		/// reading ended normally
-		/// when set, further swf data will be put in unusedSwfData
+		// reading movie data
+		readData,
+
+		// reading ended normally
+		// when set, further swf data will be put in unusedSwfData
 		endedNormally,
 
-		/// reading ended because a tag overflowed the file
-		/// when set, further swf data will be put in overflowSwfData
+		// reading ended because a tag overflowed the file
+		// when set, further swf data will be put in overflowSwfData
 		endedWithOverflow,
 	}
 
-	private ReadState readState;
+	private State state;
 	private RollingAppender swfData;
 
 	/**
@@ -48,8 +34,8 @@ public struct SwfDataAppender
 	private size_t swfDataLimit;
 
 	// stats
-	public size_t swfDataValidTotal; /// how much valid swfData has been read
-	public uint   swfDataValidCrc;   /// overall crc of valid swfData
+	public size_t swfDataValidTotal; // how much valid swfData has been read
+	public uint   swfDataValidCrc;   // overall crc of valid swfData
 
 	/**
 	 * tag stream data that was ignored because a tag overflows the header size
@@ -70,14 +56,14 @@ public struct SwfDataAppender
 	{
 		assert(swfData.totalAppended <= swfDataLimit);
 
-		// only .reading uses swfData
-		assert(readState == ReadState.reading || !swfData[].length);
+		// only .readData uses swfData
+		assert(state == State.readData || !swfData[].length);
 
 		// only .endedNormally uses unusedSwfData
-		assert(readState == ReadState.endedNormally || !unusedSwfData[].length);
+		assert(state == State.endedNormally || !unusedSwfData[].length);
 
 		// only .endedWithOverflow uses overflowSwfData
-		assert(readState == ReadState.endedWithOverflow || !overflowSwfData[].length);
+		assert(state == State.endedWithOverflow || !overflowSwfData[].length);
 	}
 
 	/**
@@ -85,7 +71,7 @@ public struct SwfDataAppender
 	 */
 	private bool isInitialized() const
 	{
-		return (swfDataLimit != 0);
+		return state != State.readHeader;
 	}
 
 	/**
@@ -94,7 +80,7 @@ public struct SwfDataAppender
 	 */
 	public bool isOverflowed() const
 	{
-		return readState == ReadState.endedWithOverflow;
+		return state == State.endedWithOverflow;
 	}
 
 	/**
@@ -102,7 +88,10 @@ public struct SwfDataAppender
 	 */
 	public bool isEnded() const
 	{
-		return readState != ReadState.reading;
+		return (
+			state == State.endedNormally ||
+			state == State.endedWithOverflow
+		);
 	}
 
 	/**
@@ -118,7 +107,7 @@ public struct SwfDataAppender
 	{
 		// only makes sense to call this in .reading
 		// swfData is empty in other states
-		assert(readState == ReadState.reading);
+		assert(state == State.readData);
 
 		return SwfBitReader(swfData[]);
 	}
@@ -144,11 +133,10 @@ public struct SwfDataAppender
 	in (!isInitialized)
 	out (; isInitialized)
 	{
-		// this needs a non-zero limit because isInitialized() uses it
-		// a file like this is necessarily going to fail to parse anyway
-		// it would be nice to actually set it to zero here, TODO
+		state = State.readData;
+
 		if (swfHeader.fileSize < SwfHeader.sizeof)
-			swfDataLimit = 1;
+			swfDataLimit = 0;
 		else
 			swfDataLimit = (swfHeader.fileSize - SwfHeader.sizeof);
 	}
@@ -168,15 +156,17 @@ public struct SwfDataAppender
 		if (swfReadRemaining)
 		{
 			size_t swfCopy = cast(size_t)min(cast(ulong)buf.length, swfReadRemaining);
-			final switch (readState)
+			final switch (state)
 			{
-				case ReadState.reading:
+				case State.readHeader:
+					assert(0);
+				case State.readData:
 					swfData.put(buf[0..swfCopy]);
 					break;
-				case ReadState.endedNormally:
+				case State.endedNormally:
 					unusedSwfData.put(buf[0..swfCopy]);
 					break;
-				case ReadState.endedWithOverflow:
+				case State.endedWithOverflow:
 					overflowSwfData.put(buf[0..swfCopy]);
 					break;
 			}
@@ -206,8 +196,8 @@ public struct SwfDataAppender
 	public void setSwfReadFinished()
 	in (isInitialized)
 	{
-		assert(readState == ReadState.reading);
-		readState = ReadState.endedNormally;
+		assert(state == State.readData);
+		state = State.endedNormally;
 
 		unusedSwfData.put(swfData[]);
 		swfData.destroy(); // no longer needed
@@ -219,8 +209,8 @@ public struct SwfDataAppender
 	public void setSwfReadFinishedWithOverflow()
 	in (isInitialized)
 	{
-		assert(readState == ReadState.reading);
-		readState = ReadState.endedWithOverflow;
+		assert(state == State.readData);
+		state = State.endedWithOverflow;
 
 		// detect likely misuse
 		// swfreader needs stuff in the buffer to detect overflow in the first place
