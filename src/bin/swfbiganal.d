@@ -5,6 +5,7 @@ import core.stdc.stdio;
 import core.stdc.string;
 import core.sys.posix.fcntl;
 import core.sys.posix.unistd;
+import core.memory;
 import core.runtime; // grep: unavoidable
 import etc.c.zlib;
 import swfbiganal.globals;
@@ -15,6 +16,7 @@ import swfbiganal.swftypes.swflzmaextradata;
 import swfbiganal.swf.errors;
 import swfbiganal.swf.tags;
 import swfbiganal.swf.tagtimestat;
+import swfbiganal.util.commaize;
 import swfbiganal.util.compiler;
 import swfbiganal.util.explainbytes;
 import swfbiganal.util.urlencode;
@@ -200,16 +202,15 @@ extern(C) int main(int argc, char** argv)
 
 end:
 
-	static if (0)
-	{{
-		import core.memory; // grep: static if
-		import swfbiganal.util.commaize;
-		char[27] buf = void;
-		fprintf(stderr, "GC total: %s\n", GC.allocatedInCurrentThread().commaize(buf));
-	}}
-
 	if (expect(useTagTimeStat, false))
 		tagTimeStat.printTotals();
+
+	if (expect(useProfileGc, false))
+	{
+		char[27] buf = void;
+		fprintf(stderr, "GC total: %s bytes (overall)\n",
+			GC.allocatedInCurrentThread().commaize(buf));
+	}
 
 	{
 		// D runtime prints gc stats to stdout, make it go in stderr instead

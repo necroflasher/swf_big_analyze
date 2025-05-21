@@ -39,11 +39,17 @@ struct TagParserState
 	{
 		bool addNew(scope const(char)[] str)
 		{
-			return strings.addNew(str, type);
+			static if (!GlobalConfig.OutputStrings)
+				return false;
+			else
+				return strings.addNew(str, type);
 		}
 		bool addNew(scope const(ubyte)[] str)
 		{
-			return strings.addNew(cast(char[])str, type);
+			static if (!GlobalConfig.OutputStrings)
+				return false;
+			else
+				return strings.addNew(cast(char[])str, type);
 		}
 	}
 	alias as2StringsSeen     = getStringSet!(SwfStrings.StringType.as2);           // DoAction, DoInitAction, DefineButton, DefineButton2, PlaceObject2, PlaceObject3
@@ -97,6 +103,7 @@ struct TagParserState
 		scope const(ubyte)[] mapBytes,
 		ref TagParserState ps)
 	{
+		static if (GlobalConfig.OutputStrings)
 		parsedFontById.update(id,
 			() {
 				return ParsedFont(

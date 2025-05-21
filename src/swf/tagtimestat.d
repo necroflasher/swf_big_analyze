@@ -97,6 +97,7 @@ struct TagTimeStat
 		}
 
 		char[27] buf = void;
-		fprintf(stderr, "GC total: %s bytes\n", totalGcSize.commaize(buf));
+		fprintf(stderr, "GC total: %s bytes (tags)\n",
+			totalGcSize.commaize(buf));
 	}
 }

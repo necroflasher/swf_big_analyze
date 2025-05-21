@@ -7,7 +7,8 @@ struct GlobalConfig
 
 	enum ParseTags = 1;
 
-	/** collect and print all strings inside the flash (tags.d) */
+	// 1 = collect strings from the swf and print them
+	// 0 = disable printing but still parse the same stuff
 	enum OutputStrings = 1;
 
 	// sizes of buffers used for reading/decompressing data
