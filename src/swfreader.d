@@ -585,7 +585,7 @@ struct SwfReader
 				return;
 		}
 
-		compressionHeader = fileData[].idup;
+		compressionHeader = fileData[];
 		fileData.reset();
 
 		/*
