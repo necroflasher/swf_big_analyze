@@ -51,6 +51,11 @@ struct SwfRect
 	{
 		return (ymax - ymin) / 20;
 	}
+
+	size_t lengthBytes()
+	{
+		return (5 + 4*bits + 7) / 8;
+	}
 }
 
 unittest
@@ -69,9 +74,10 @@ unittest
 		uint totalBytes = totalBits/8;
 
 		br = SwfBitReader(bs[0..totalBytes]);
-		SwfRect(br);
+		auto sr = SwfRect(br);
 		assert(!br.overflow);
 		assert(br.curBit == totalBits);
+		assert(sr.lengthBytes == totalBytes);
 
 		br = SwfBitReader(bs[0..totalBytes]);
 		SwfRect.skip(br);

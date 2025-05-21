@@ -43,7 +43,6 @@ struct SwfReader
 
 	public SwfHeader          swfHeader;
 	public SwfMovieHeader     movieHeader;
-	private size_t            movieHeaderSize;
 	public LimitAppender2!13  compressionHeader = {limit: 13};
 
 	private LimitAppender2!13 fileData;   /// temporary for holding header data
@@ -197,6 +196,7 @@ struct SwfReader
 		totalMovieData += swfData.unusedSwfData.total;
 		totalMovieData += swfData.overflowSwfData.total;
 
+		size_t movieHeaderSize = movieHeader.display.lengthBytes+4;
 		assert(movieHeaderSize >= 5); // smallest valid, should have it here
 		size_t displayRectSize = movieHeaderSize-4;
 
@@ -755,8 +755,7 @@ struct SwfReader
 			movieHeader = SwfMovieHeader(br);
 			if (!br.overflow)
 			{
-				movieHeaderSize = bitsToBytes(br.curBit);
-				swfData.advanceBy(movieHeaderSize);
+				swfData.advanceBy(bitsToBytes(br.curBit));
 				// ok, ready to read tags now
 				state = State.readTagData;
 			}
