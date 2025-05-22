@@ -1,7 +1,9 @@
-/swfbiganal
-/swfbiganal2
-/swfbiganal3
 /_test_swfbiganal
 /_test_swfbiganal2
 /_test_swfbiganal3
+/swfbiganal
+/swfbiganal2
+/swfbiganal3
+/test.swf.asm
 *.o
+*.swf
