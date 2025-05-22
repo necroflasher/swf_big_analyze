@@ -49,8 +49,8 @@ for rect_size in $(seq 1 17); do
 	generate $header_min $rect_size $tags_min >test.swf.asm
 	yasm test.swf.asm || exit
 	shouldpass test.swf
-	if ! ./swfbiganal test.swf >/dev/null; then
-		./swfbiganal test.swf -tags
+	if ! ./analyze test.swf >/dev/null; then
+		./analyze test.swf -tags
 		echo fail
 		exit 1
 	fi
@@ -60,8 +60,8 @@ for rect_size in $(seq 1 17); do
 	generate $header_min $rect_size $((tags_min-1)) >test.swf.asm
 	yasm test.swf.asm || exit
 	shouldfail test.swf
-	if ./swfbiganal test.swf >/dev/null; then
-		./swfbiganal test.swf -tags
+	if ./analyze test.swf >/dev/null; then
+		./analyze test.swf -tags
 		echo fail
 		exit 1
 	fi
@@ -71,8 +71,8 @@ for rect_size in $(seq 1 17); do
 	generate $((header_min-1)) $rect_size $tags_min >test.swf.asm
 	yasm test.swf.asm || exit
 	shouldfail test.swf
-	if ./swfbiganal test.swf >/dev/null; then
-		./swfbiganal test.swf -tags
+	if ./analyze test.swf >/dev/null; then
+		./analyze test.swf -tags
 		echo fail
 		exit 1
 	fi

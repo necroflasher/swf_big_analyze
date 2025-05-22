@@ -18,7 +18,7 @@ the intended use is to run it on a big collection of flashes, saving the output
 ## example output
 
 ```
-% ./swfbiganal3 ~/flash/idgaf.swf
+% ./analyze3 ~/flash/idgaf.swf
 file 603713 /home/user/flash/idgaf.swf
 swf-header CWS 7 607842
 zlib-header 8 7 28 n 2 -
@@ -38,11 +38,11 @@ swf-data-total 607834 90bacfbc
 ## efficiently searching gigabytes of output
 
 these examples search for a specific printed warning (AS2 undocumented opcode)
- in an output file named `swfbiganal.out`
+ in an output file named `analyze.out`
 
 ```
 # print path and matching line
-rg '^file|^#!.*AS2 undocumented' swfbiganal.out | mawk '
+rg '^file|^#!.*AS2 undocumented' analyze.out | mawk '
 /^f/ { fileline=$0; next; }
 { tmp=$0; $0=fileline; print($3 ": " tmp); }
 '
@@ -50,7 +50,7 @@ rg '^file|^#!.*AS2 undocumented' swfbiganal.out | mawk '
 
 ```
 # just list files that have a matching line
-rg '^file|^#!.*AS2 undocumented' swfbiganal.out | mawk '
+rg '^file|^#!.*AS2 undocumented' analyze.out | mawk '
 /^f/ { fileline=$0; next; }
 fileline!="" { tmp=$0; $0=fileline; print($3); fileline=""; }
 '
@@ -72,13 +72,13 @@ note that if you have `gcc` installed using a package manager, it's likely that
 
 ```
 # with dmd
-make swfbiganal
+make analyze
 
 # with ldc
-make swfbiganal2 OPT=1
+make analyze2 OPT=1
 
 # with gdc
-make swfbiganal3 OPT=1
+make analyze3 OPT=1
 ```
 
 ## known differences from flash player

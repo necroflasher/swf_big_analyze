@@ -1,4 +1,4 @@
-module swfbiganal.bin.swfbiganal;
+module swfbiganal.bin.analyze;
 
 import core.stdc.errno;
 import core.stdc.stdio;
@@ -44,15 +44,15 @@ extern (C) __gshared bool rt_cmdline_enabled = false;
 
 version(DigitalMars)
 {
-	enum EXENAME = "swfbiganal";
+	enum EXENAME = "analyze";
 }
 else version(LDC)
 {
-	enum EXENAME = "swfbiganal2";
+	enum EXENAME = "analyze2";
 }
 else version(GNU)
 {
-	enum EXENAME = "swfbiganal3";
+	enum EXENAME = "analyze3";
 }
 
 extern(C) int main(int argc, char** argv)

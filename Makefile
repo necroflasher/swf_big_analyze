@@ -1,8 +1,8 @@
-swfbiganal_SRCS = \
+analyze_SRCS = \
 	$(shell find src/ -name '*.d' -not -path 'src/bin/*.d') \
-	src/bin/swfbiganal.d \
+	src/bin/analyze.d \
 
-swfbiganal_LIBS = -llzma -lxxhash
+analyze_LIBS = -llzma -lxxhash
 
 DMD ?= dmd -defaultlib=libphobos2.so -g -L=-fuse-ld=lld
 LDC ?= ldc2 --disable-verify --gline-tables-only --link-defaultlib-shared
@@ -36,49 +36,49 @@ endif
 
 # always recompile in "make watch"
 ifeq ($(MAKELEVEL),1)
-.PHONY: swfbiganal
-.PHONY: swfbiganal2
-.PHONY: swfbiganal3
+.PHONY: analyze
+.PHONY: analyze2
+.PHONY: analyze3
 endif
 
-swfbiganal: $(swfbiganal_SRCS)
-	$(DMD) $(DMDFLAGS) $^ -of=$@ $(addprefix -L=,$(swfbiganal_LIBS)) && size $@
+analyze: $(analyze_SRCS)
+	$(DMD) $(DMDFLAGS) $^ -of=$@ $(addprefix -L=,$(analyze_LIBS)) && size $@
 
-swfbiganal2: $(swfbiganal_SRCS)
-	$(LDC) $(LDCFLAGS) $^ --of=$@ $(addprefix --L=,$(swfbiganal_LIBS)) && size $@
+analyze2: $(analyze_SRCS)
+	$(LDC) $(LDCFLAGS) $^ --of=$@ $(addprefix --L=,$(analyze_LIBS)) && size $@
 
-swfbiganal3: $(swfbiganal_SRCS)
-	$(GDC) $(GDCFLAGS) $^ -o $@ $(swfbiganal_LIBS) && size $@
+analyze3: $(analyze_SRCS)
+	$(GDC) $(GDCFLAGS) $^ -o $@ $(analyze_LIBS) && size $@
 
 .PHONY: watch watchldc watchgdc
 watch:
-	ls $(swfbiganal_SRCS) | entr -cs 'make -s'
+	ls $(analyze_SRCS) | entr -cs 'make -s'
 watchldc:
-	ls $(swfbiganal_SRCS) | entr -cs 'make -s swfbiganal2'
+	ls $(analyze_SRCS) | entr -cs 'make -s analyze2'
 watchgdc:
-	ls $(swfbiganal_SRCS) | entr -cs 'make -s swfbiganal3'
+	ls $(analyze_SRCS) | entr -cs 'make -s analyze3'
 
-_test_swfbiganal: DMDFLAGS += -unittest
-_test_swfbiganal: $(swfbiganal_SRCS)
-	$(DMD) $(DMDFLAGS) $^ -of=$@ $(addprefix -L=,$(swfbiganal_LIBS)) && size $@
-_test_swfbiganal2: LDCFLAGS += --unittest
-_test_swfbiganal2: $(swfbiganal_SRCS)
-	$(LDC) $(LDCFLAGS) $^ --of=$@ $(addprefix --L=,$(swfbiganal_LIBS)) && size $@
-_test_swfbiganal3: GDCFLAGS += -funittest -fmoduleinfo
-_test_swfbiganal3: $(swfbiganal_SRCS)
-	$(GDC) $(GDCFLAGS) $^ -o $@ $(swfbiganal_LIBS) && size $@
+_test_analyze: DMDFLAGS += -unittest
+_test_analyze: $(analyze_SRCS)
+	$(DMD) $(DMDFLAGS) $^ -of=$@ $(addprefix -L=,$(analyze_LIBS)) && size $@
+_test_analyze2: LDCFLAGS += --unittest
+_test_analyze2: $(analyze_SRCS)
+	$(LDC) $(LDCFLAGS) $^ --of=$@ $(addprefix --L=,$(analyze_LIBS)) && size $@
+_test_analyze3: GDCFLAGS += -funittest -fmoduleinfo
+_test_analyze3: $(analyze_SRCS)
+	$(GDC) $(GDCFLAGS) $^ -o $@ $(analyze_LIBS) && size $@
 
 .PHONY: test test2 test3
-test: _test_swfbiganal
-	./_test_swfbiganal
-test2: _test_swfbiganal2
-	./_test_swfbiganal2
-test3: _test_swfbiganal3
-	./_test_swfbiganal3
+test: _test_analyze
+	./_test_analyze
+test2: _test_analyze2
+	./_test_analyze2
+test3: _test_analyze3
+	./_test_analyze3
 
 .PHONY: watchtest
 watchtest:
-	ls $(swfbiganal_SRCS) | entr -cs 'make -s test'
+	ls $(analyze_SRCS) | entr -cs 'make -s test'
 
 .PHONY: todo
 todo:
