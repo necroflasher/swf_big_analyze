@@ -110,9 +110,6 @@ extern(C) int main(int argc, char** argv)
 		}
 	}
 
-	if (disableGc)
-		GC.disable();
-
 	if (!useProfileGc)
 	{
 		// skip the bounds check (yolo)
@@ -124,6 +121,8 @@ extern(C) int main(int argc, char** argv)
 		rv = 1;
 		goto endNoRt;
 	}
+	if (disableGc)
+		GC.disable();
 
 	version(unittest)
 	{{
