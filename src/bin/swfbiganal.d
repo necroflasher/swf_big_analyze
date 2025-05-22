@@ -25,12 +25,15 @@ import core.bitop : bswap;
 
 private:
 
-extern(C) __gshared string[] rt_options = [
+extern (C) __gshared string[] rt_options = [
 	"gcopt=cleanup:none",
 
-	"gcopt=minPoolSize:8",
-	"gcopt=maxPoolSize:256",
-	"gcopt=incPoolSize:8",
+	// https://dlang.org/spec/garbage.html#gc_config
+	// at the time of writing, the biggest GC size in a single flash is one of
+	//  the furry text adventure games at 13,259,760 bytes
+	"gcopt=minPoolSize:8",   // "initial and minimum pool size in MB"
+	"gcopt=maxPoolSize:256", // "maximum pool size in MB"
+	"gcopt=incPoolSize:8",   // "pool size increment MB"
 
 	// must be last - filtered out by command line
 	"gcopt=profile:1",
