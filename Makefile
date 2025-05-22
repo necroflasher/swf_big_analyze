@@ -15,7 +15,7 @@ GDCFLAGS += -fdebug
 endif
 ifeq ($(OPT),1)
 DMDFLAGS += -O -inline -mcpu=native
-LDCFLAGS += -O3 -flto=full -mcpu=native --fvisibility=hidden -fno-exceptions
+LDCFLAGS += -O3 -flto=full -mcpu=native --fvisibility=hidden
 GDCFLAGS += -O3 -flto=auto -march=native -fvisibility=hidden -fno-exceptions
 endif
 ifeq ($(RELEASE),1)
