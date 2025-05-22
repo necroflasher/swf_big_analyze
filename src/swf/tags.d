@@ -1401,6 +1401,14 @@ in (
 					});
 				}
 			}
+			// detect flashes that need a .swz download to run
+			if (expect(isSwzUrl(str), false))
+			{
+				urlEncodeMin(str, (scope s)
+				{
+					printf("!swz-download %.*s\n", cast(int)s.length, s.ptr);
+				});
+			}
 		}
 	}
 
@@ -1408,6 +1416,41 @@ in (
 	// https://web.archive.org/web/20220523173435/https://www.m2osw.com/mo_references_view/sswf_docs/abcFormat.html
 
 	br.finishIncomplete(tag);
+}
+
+bool isSwzUrl(const(char)[] str)
+{
+	enum swzPrefix = "://fpdownload.adobe.com/pub/swz/";
+	enum swzSuffix = ".swz";
+	enum minLength = (4 + swzPrefix.length + swzSuffix.length);
+
+	if (expect(str.length < minLength, true))
+		return false;
+
+	// this is also uncommon, check it early
+	if (expect(str[$-swzSuffix.length..$] != swzSuffix, true))
+		return false;
+
+	if (str[0..4] != "http")
+		return false;
+	str = str[4..$];
+
+	if (str[0] == 's')
+		str = str[1..$];
+
+	if (str[0..swzPrefix.length] != swzPrefix)
+		return false;
+
+	return true;
+}
+
+unittest
+{
+	// there are others, but the two most common ones are:
+	// http://fpdownload.adobe.com/pub/swz/tlf/1.0.0.595/textLayout_1.0.0.595.swz
+	// http://fpdownload.adobe.com/pub/swz/tlf/2.0.0.232/textLayout_2.0.0.232.swz
+	assert(isSwzUrl("http://fpdownload.adobe.com/pub/swz/hi.swz"));
+	assert(isSwzUrl("https://fpdownload.adobe.com/pub/swz/hi.swz"));
 }
 
 void readSymbolClass(ref SwfTag tag)
