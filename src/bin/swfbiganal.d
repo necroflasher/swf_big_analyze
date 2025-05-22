@@ -38,6 +38,9 @@ extern (C) __gshared string[] rt_options = [
 	// must be last - filtered out by command line
 	"gcopt=profile:1",
 ];
+// not used, might save a bit of time
+extern (C) __gshared bool rt_envvars_enabled = false;
+extern (C) __gshared bool rt_cmdline_enabled = false;
 
 version(DigitalMars)
 {
