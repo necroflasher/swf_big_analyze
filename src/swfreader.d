@@ -1046,6 +1046,7 @@ unittest
 	sr.put("\x12\x34"); // frameCount
 	sr.put("\x40\x00"); // ShowFrame
 	sr.put("\x40\x00"); // ShowFrame
+	sr.put("\x40\x00"); // ShowFrame
 	sr.put("\x00\x00"); // End
 	sr.putEndOfInput();
 
@@ -1053,6 +1054,7 @@ unittest
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 13);
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 15);
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 17);
+	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 19);
 	if (sr.readTag(tag)) assert(0);
 
 	assert(!sr.hasErrors);
@@ -1071,6 +1073,7 @@ unittest
 		"\x12\x34"~ // frameCount
 		"\x40\x00"~ // ShowFrame
 		"\x40\x00"~ // ShowFrame
+		"\x40\x00"~ // ShowFrame
 		"\x00\x00"  // End
 	));
 	sr.putEndOfInput();
@@ -1079,6 +1082,7 @@ unittest
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 13);
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 15);
 	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 17);
+	if (!sr.readTag(tag)) assert(0); assert(tag.fileOffset == 19);
 	if (sr.readTag(tag)) assert(0);
 
 	assert(!sr.hasErrors);
