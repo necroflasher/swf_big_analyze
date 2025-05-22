@@ -64,6 +64,7 @@ extern(C) int main(int argc, char** argv)
 	bool useTagTimeStat;
 	bool hasFiles;
 	bool useProfileGc;
+	bool disableGc;
 
 	for (int i = 1; i < argc; i++)
 	{
@@ -79,6 +80,10 @@ extern(C) int main(int argc, char** argv)
 			else if (!strcmp(opt, "-gc"))
 			{
 				useProfileGc = true;
+			}
+			else if (!strcmp(opt, "-nogc"))
+			{
+				disableGc = true;
 			}
 			else if (!strcmp(opt, "-stat"))
 			{
@@ -104,6 +109,9 @@ extern(C) int main(int argc, char** argv)
 			continue;
 		}
 	}
+
+	if (disableGc)
+		GC.disable();
 
 	if (!useProfileGc)
 	{
@@ -201,6 +209,7 @@ extern(C) int main(int argc, char** argv)
 			"options:\n"~
 			"    -charset=<cs>  decode SWF1-5 text using charset (e.g. CP932)\n"~
 			"    -gc            print gc profile data at exit\n"~
+			"    -nogc          turn off garbage collection\n"~
 			"    -stat          print time/space used parsing tags\n"~
 			"    -tags          output a line for every encountered tag\n"~
 			"");
